@@ -1,0 +1,277 @@
+# Linux, Nginx, Flask, MySQL, Redis, (uWSIG, Gunicorn)
+## Dependencies
+
+gcc, make 
+MySQL: cmake, libaio, ncurses, ncurses-devel, git, gcc-c++, devtoolset-10-gcc, devtoolset-10-gcc-c++, devtoolset-10-binutils, boost, openssl, openssl-devel 
+
+## Nginx
+
+nginx默认目录
+
+    配置文件    /etc/nginx/nginx.conf
+    PID文件    /var/run/nginx.pid
+    错误日志    /var/log/nginx/error.log
+    访问日志    /var/log/nginx/access.log
+    站点目录    /usr/share/nginx/html
+
+### Dependencies
+
+已装: gcc-c++, openssl, openssl-devel
+未装: pcre, pcre-devel, zlib, zlib-devel
+
+### 安装
+
+`yum search nginx`
+
+不要安装rh-nginx*这是RedHat,不适用CentOS
+
+[添加yum源](https://www.nginx.com/resources/wiki/start/topics/tutorials/install/): 
+vi /etc/yum.repos.d/nginx.repo
+
+    [nginx]
+    name=nginx repo
+    baseurl=https://nginx.org/packages/centos/$releasever/$basearch/
+    gpgcheck=0
+    enabled=1
+`yum install nginx`
+
+### 验证
+
+需要同时打开服务器防火墙的 80（HTTP）和 443（HTTPS）端口
+
+    sudo firewall-cmd --permanent --zone=public --add-service=http
+    sudo firewall-cmd --permanent --zone=public --add-service=https
+    sudo firewall-cmd --reload
+
+### Nginx 的配置文件和最佳实践
+[开发指南：如何在 CentOS 7 上安装 Nginx](https://kaifazhinan.com/how-to-install-nginx-on-centos-7/)
+
+通过以上方式安装的 Nginx，所有相关的配置文件都在 /etc/nginx/ 目录中。
+主配置文件  /etc/nginx/nginx.conf
+* 为了使 Nginx 配置更易于维护，建议为每个服务（域名）创建一个单独的配置文件。
+* 每一个独立的 Nginx 服务配置文件都必须以 .conf 结尾，并存储在 /etc/nginx/conf.d 目录中。您可以根据需求，创建任意多个独立的配置文件。
+* 独立的配置文件，建议遵循以下命名约定，比如你的域名是 kaifazhinan.com，那么你的配置文件的应该是这样的 /etc/nginx/conf.d/kaifazhinan.com.conf，如果你在一个服务器中部署多个服务，当然你也可以在文件名中加上 Nginx 转发的端口号，比如 kaifazhinan.com.3000.conf，这样做看起来会更加友好。
+* 如果你的配置中有很多重复的代码，那么建议你创建一个 /etc/nginx/snippets 文件夹，在这里面存放所有会被复用的代码块，然后在各个需要用到的 Nginx 的配置文件中引用进去，这样可以更方便管理和修改。
+* Nginx 日志文件（access.log 和 error.log ）位于 /var/log/nginx/ 目录中。建议为每个独立的服务配置不同的访问权限和错误日志文件，这样查找错误时，会更加方便快捷。
+* 你可以将要部署的代码文件，存储在任何你想的位置，但是一般推荐存放在下列位置中的其中一个：
+
+    /home/<user_name>/<site_name>
+    /var/www/<site_name>
+    /var/www/html/<site_name>
+    /opt/<site_name>
+    /usr/share/nginx/html
+
+
+### Reference:
+[开发指南：如何在 CentOS 7 上安装 Nginx](https://segmentfault.com/a/1190000018109309)
+
+## Python
+
+1. `yum install python3`
+
+    python3 -> phthon
+
+[centos7安装python3，并配置与python2共存](https://blog.csdn.net/chicken_h/article/details/107003485)
+
+[Centos7安装python3并与python2共存](https://cloud.tencent.com/developer/article/1549632)
+
+2. 虚拟环境管理py相关
+    * `yum install pip3`
+    * `pip install pipenv`
+    * `mkdir venv_dir & cd venv_dir`
+    * `pipenv shell`    #启动虚拟环境
+
+## uWSIG & Gunicorn
+### uWSIG
+
+3. `(venv_dir)pip install uwsgi`
+    + `yum install python3-devel`   # 先装上python-dev否则报错找不到python.h. 见下面Errors
+    + `vi uwsgi.ini`
+
+---
+    [uwsgi]
+    http = 0.0.0.0:8080 #0.0.0.0代表可以全网访问，端口为8080
+    chdir = /home/www/movie/ #项目目录
+    wsgi-file = movie.py #项目启动文件
+    callable = app #flask核心对象
+    processes = 1 #进程数
+    threads = 2 #线程数
+---
+
+**Errors**
+1. Python.h: No such file or directory #include <Python.h>
+    * `yum install python3-devel`   # 先装上python-dev否则报错找不到python.h
+
+2. connect(): Permission denied [core/logging.c line 276]
+
+uwsgi前台运行时:
+
+    [uwsgi]
+    # ...
+    logto = /path/file_name.log
+    logfile-chown = username:groupname
+    logfile-chmod = 640
+
+
+### Gunicorn
+`(venv_dir)pip install gunicorn`
+[Running Gunicorn](https://docs.gunicorn.org/en/latest/run.html)
+`gunicorn -w 4 myapp:app`
+
+## Flask
+
+4. `(venv_dir)pip install flask`
+
+外部可见的服务器
+运行服务器后，会发现只有您自己的电脑可以使用服务，而网络中的其他电脑却 不行。缺省设置就是这样的，因为在调试模式下该应用的用户可以执行您电脑中 的任意 Python 代码。
+
+如果您关闭了调试器或信任您网络中的用户，那么可以让服务器被公开访问。 只要在命令行上简单的加上 --host=0.0.0.0 即可:
+`flask run --host=0.0.0.0`
+
+
+
+[why do I need NGNIX when I have uWSGI](https://serverfault.com/questions/590819/why-do-i-need-nginx-when-i-have-uwsgi)
+
+[使用了Gunicorn或者uWSGI,为什么还需要Nginx](https://www.zhihu.com/question/30560394)
+
+
+http <-> Nginx <-TCP/U-sock-> Gnucorn(uWSGI): WSGI server <-> Flask: Web Frame <-> Database
+
+
+### 1. Flask <--> MySQL
+Flask-SQLAlchemy
+### 2. Flask <--> Redis
+Flask-caching
+* (a) cache View func
+
+    @Cache.
+
+* (b) cahce data
+
+
+Flask-session
+### 3. uWSGI <--> Flask
+
+`uwsgi - app.py`
+
+1. 配置文件放在项目根目录下，名称随意，以.ini后缀结尾 
+
+Flask uwsgi 配置:
+
+    [uwsgi]
+    # 主进程 PID 保存文件, stop 时可用
+    pidfile =  uwsgi.pid
+    # 日志文件(后台运行)
+    daemonize = uwsgi.log
+    # 日志(前台运行)
+    logto = /path/file_name.log
+    logfile-chown = username:groupname
+    logfile-chmod = 640
+
+    # Nginx 使用
+    #socket=/root/Nginx_Flask/Dictionary/
+
+    # uwsgi启动时，所使用的地址和端口（这个是http协议的）记得firewall打开这个port!!!
+    http=0.0.0.0:5000
+    # 指向网站目录(项目的源码根目录)
+    chdir=/root/Nginx_Flask/Dictionary/
+
+    # Flask 使用
+    # python 启动程序文件
+    wsgi-file=app.py
+    # app.py内用以启动的application:app = Flask(__name__) 
+    callable=app
+
+    # Django 使用
+    # wsgi-flie=
+
+    #处理器数
+    processes=2
+    enable-threads = True
+    #线程数
+    threads=2
+
+2. 启动项目
+
+***在pipenv环境下 :***
+
+`uwsgi --ini uwsgi.ini`
+
+3. 关闭
+
+`uwsgi --stop uwsgi.pid`
+
+多线程下stop不能stop完全，继续使用kill
+
+`ps -aux | grep uwsgi | awk '{print $2}'| xargs kill -9`
+
+or
+
+`pkill uwgsgi`
+
+这里ps不一定能及时显示，稍等片刻
+
+> 注意docker中运行uwsgi时一定要前台运行，后台运行秒退!!!(daemonize)
+
+
+#### Reference
+1. [使用uWSGI运行flask项目详解](https://cloud.tencent.com/developer/article/1609621)
+2. [uWSGI项目](https://uwsgi-docs-zh.readthedocs.io/zh_CN/latest/index.html)
+3. [Python uWSGI logs have no read permissions](https://serverfault.com/questions/602128/python-uwsgi-logs-have-no-read-permissions)
+4. [docker容器中启动uwsgi秒退](https://blog.csdn.net/lymmurrain/article/details/114275521)
+
+### 4. Nginx <--> uWSGI
+
+#### 4.1 Nginx <-TCP-> uWSGI
+
+#### 4.2 Nginx <-Unix-sock-> uWSGI
+    [uwsgi]
+    socket=
+Nginx 配置:
+
+    http {
+        ...
+        
+        server { 
+        listen 80;
+        server_name 192.168.149.138;
+        root /root/Nginx_Flask/Dictionary;
+
+        # static
+        location /static {
+            alias /root/Nginx_Flask/Dictionary/static;
+        }
+        # dynamic
+        location / {
+            include /etc/nginx/uwsgi_params;
+            # uwsgi_pass 192.168.149.138:5000
+            uwsgi_pass unix:/root/Nginx_Flask/Dictionary/myapp.sock;
+        }
+        }
+    }
+
+cmd:
+运行Nginx前先关闭，保证port 80不被之前开启的Nginx占用
+
+    pkill nginx
+    pkill uwsgi
+    nginx -c /root/Nginx_Flask/Dictionary/nginx.conf
+    sleep 5
+    ps -aux | grep nginx
+    echo "nginx up"
+    uwsgi --ini uwsgi.ini
+    sleep 3
+    ps -aux | grep uwsgi
+    echo "uwsgi up"
+
+* [WSGI，uWSGI和uwsgi区别详解](https://zysheep.cn/2020/04/04/Python/uWSGI,WSGI%E5%92%8Cuwsgi/)
+* [WSGI,uwsgi和uWSGI区别联系](https://www.cnblogs.com/davis12/p/14583354.html)
+* [Socket使用大全](https://www.jianshu.com/p/f74e5fe71625)
+* [使用 uWSGI 和 Nginx 部署 Django 项目](https://juejin.cn/post/6844903826588172301)
+* [HTTP Server监听Unix Socket套接字](https://itbilu.com/nodejs/core/EJd85BikZ.html)
+* [使用uWSGI和nginx来搭建Django应用](https://www.liuin.cn/2016/11/30/%E4%BD%BF%E7%94%A8uWSGI%E5%92%8Cnginx%E6%9D%A5%E6%90%AD%E5%BB%BADjango%E5%BA%94%E7%94%A8/)
+
+* [Linux Socket编程](https://www.cnblogs.com/skynet/archive/2010/12/12/1903949.html)
+* [Web 开发的重要概念辨析：CGI、WSGI、uWSGI、ASGI](https://jishuin.proginn.com/p/763bfbd6e24e)
+* [Running shell command and capturing the output](https://stackoverflow.com/questions/4760215/running-shell-command-and-capturing-the-output)
+* [Flask: Read from a Database](https://python-adv-web-apps.readthedocs.io/en/latest/flask_db2.html)

@@ -1,0 +1,145 @@
+# dns
+(This problem  and  )
+## env:
+- master(1), worker(1)
+- kubernetes: 1.23 (server,client)
+- docker: 20.10.14
+- in worker node pod
+- pod install
+	+ ping
+	+ mysql
+- tried images:
+	+ mysql(ubuntu)
+	+ centos/systemd
+	+ gcr.io/google-samples/xtrabackup:1.0
+	+ dnsutils
+	+ busybox
+## problem:
+- can't update the repo
+```s
+	apt-get update		(X)
+	yum update			(X)
+```
+- can't ping web address
+```s
+	ping  worker_node_IP	(V)
+	ping  master_node_IP	(V)
+	ping  google.com		(X)
+	ping  www.google.com	(X)
+```
+
+## issue involved:
+
+- apt-get
+	+ [apt-get update failed to fetch][a]
+	+ Unable to correct problems, you have held broken packages.
+	+ Some index files failed to download. They have been ignored, or old ones used instead.
+
+
+```bash
+	rm -rf /var/lib/apt/lists/*
+	mkdir -p /var/lib/apt/lists/partial
+	apt-get clean
+	apt-get update
+```
+- `sed -i` can not work inside container
+	+ [sed: cannot rename /etc/sedjfZ8OS: Device or resource busy][b]
+
+```bash
+	# sed cant work in-place (-i) in docker
+	cp /etc/resolve.conf /etc/resolve.conf.old
+	sed "s/ndots:5/ndots:2/g" > /etc/resolve.conf
+```
+- dns
+
+- firewall/iptables
+- coredns/kube-dns
+
+```s
+	kubectl get ep kube-dns --namespace=kube-system
+	kubectl -n kube-system rollout restart deployment coredns
+	kubectl edit configmap coredns
+	kubectl logs coredns-6f54f8b5df-m5djg
+```
+- pod restart
+- D-BUS connection
+	+ failed to get D-Bus connection: Operation not permitted
+	+ [dbus.exceptions.DBusException][c]: org.freedesktop.DBus.Error.FileNotFound: Failed to connect to socket /var/run/dbus/system_bus_socket: No such file or directory
+	* service dbus start
+- port/targetPort/containerPort
+- [OOMKilled][o]
+	+ [memory `kubectl describe`][oo]
+
+## tools:
++ ping
++ telnet
+`telnet 127.0.0.1 3306`
++ iptables
+```bash
+	# on running node
+	iptables -n -t nat -L KUBE-SERVICE
+	iptables -n -t nat -L KUBE-SVC-****
+	iptables -n -t nat -L KUBE-SEP-****
+```
++ ip
+`ip route get 127.0.0.1`
++ tshark
+
+`tshark -V -i flannel.1 -d tcp.port==3306,mysql -f "port=3306"`
+
++ tcpdump
+`tcpdump -nnvv -i cni0 tcp port 3306`
+`tcpdump -s 65535 -x -nn -q -tttt -i any -c 99999 port 3306`
++ curl
++ mysql
+### nsenter
+
+nsenter命令用于进入指定进程的命名空间，包括最常用的挂载命名空间和网络命名空间。适用于容器这种特殊的进程。
+
+```sh
+	#进入网络命名空间
+	nsenter -t <Pid> -n 
+
+	#进入挂载命名空间，类似docker exec进入容器
+	nsenter -t <Pid> -m
+```
+
+```sh
+	# 1. find conainer PID
+	docker ps | grep 容器name # 容器id
+	docoer inspect 容器id | grep Pid
+	or
+	docker top 容器id
+	# 2. enter net namespace
+	nsenter -t 容器PID -n
+	# 3. tcpdum catch package
+```
+> Notice: `lsns | grep net` shows all net namespace, which is different from 
+
+<!-- reference -->
+[a]: https://askubuntu.com/questions/711794/apt-get-update-always-failed-to-fetch
+[b]: https://unix.stackexchange.com/questions/404189/find-and-sed-string-in-docker-got-error-device-or-resource-busy
+[c]: https://stackoverflow.com/questions/58514890/failed-to-connect-to-socket-opt-local-var-run-dbus-system-bus-socket-no-such-f
+[o]: https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/
+[oo]: https://www.wireshark.org/docs/wsug_html_chunked/AppToolstcpdump.html
+
+
+
+# steps
+
+0. pod start procedural; network build procedual; svc create
+
+
+1. targetPort and inside container configures
+2. service IP
+3. ingress and load balance
+4. svc_1: pod_1(mysql-name1), pod_2(mysql-name2)
+	svc_2: pod_1(web_app)
+	in svc_2 pod_1(web_app) can't ping mysql-name*
+	in svc_1 pod_1 can
+	why not use svc_* rather than pod_* as name
+5. read and write with mysql master and slave
+6. PVC
+
+1. change NodeIP -> ClusterIP
+2. iptables -> ipvs

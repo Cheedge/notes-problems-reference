@@ -1,0 +1,250 @@
+# K8s network 初窥
+Concepts:
+
+IP:
+  - NodeIP
+  - ClusterIP
+  - PodIP
+
+Port:
+  - NodePort
+  - Port
+  - targetPort
+  - containerPort
+
+Tools:
+  - nsenter
+  - ip addr/route
+  - iptables
+  - tshark
+
+Communications:
+  - Node
+  - Cluster(Namespace) # assume 1 cluseter include 1 ns here
+  - Pod
+  - Container
+
+## Communications:
+### inside Pod Containers
+
+shared:
+  - PodIP: (like host network in docker)
+      
+
+### inside Cluster Pod - Pod
+through cni(as bridge layer 2)
+### diff Cluster Pod - Pod
+through 
+### diff Node Pod - Pod
+
+
+
+## IP
+
+
+## Port
+
+## Pod
+
+
+
+
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  ports:
+  - port: 3307
+    targetPort: 3306
+  selector:
+    app: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - image: mysql
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: 
+        ports:
+        - containerPort: 3306
+          name: mysql
+```
+
++ Pod 1: 10.244.1.29
++ Pod 2: 10.244.1.30
++ ClusterIP:   10.102.120.27 PORT 3307
++ nameserver 10.96.0.10
+
+
+```sh
+[root@server Pod-svc]# kubectl get svc -o wide
+NAME    TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE   SELECTOR
+mysql   ClusterIP   10.102.120.27   <none>        3307/TCP   11m   app=mysql
+[root@server Pod-svc]# iptables -n -t nat -L | grep 10.102.120.27
+KUBE-SVC-OCEBRAEN6KWB2OT5 tcp  -- 0.0.0.0/0       10.102.120.27   /* test-ns/mysql cluster IP */ tcp dpt:3307
+KUBE-MARK-MASQ            tcp  -- !10.244.0.0/16  10.102.120.27   /* test-ns/mysql cluster IP */ tcp dpt:3307
+# or use
+[root@k8s-slave ~]# iptables -n -t nat -L KUBE-SERVICES
+KUBE-SVC-OCEBRAEN6KWB2OT5 tcp --  0.0.0.0/0 10.102.120.27 /* test-ns/mysql cluster IP */ tcp dpt:3307
+[root@server Pod-svc]# iptables -n -t nat -L KUBE-SVC-OCEBRAEN6KWB2OT5
+Chain KUBE-SVC-OCEBRAEN6KWB2OT5 (1 references)
+target                    prot opt  source          destination         
+KUBE-MARK-MASQ            tcp  --   !10.244.0.0/16  10.102.120.27 /* test-ns/mysql cluster IP */ tcp dpt:3307
+KUBE-SEP-MAV6ER7VLS253OUE all  --   0.0.0.0/0       0.0.0.0/0     /* test-ns/mysql */ statistic mode random probability 0.50000000000
+KUBE-SEP-IIS3QMG2GSO3T7J6  all  --  0.0.0.0/0       0.0.0.0/0     /* test-ns/mysql */
+[root@server Pod-svc]# iptables -n -t nat -L KUBE-SEP-MAV6ER7VLS253OUE
+Chain KUBE-SEP-MAV6ER7VLS253OUE (1 references)
+target          prot opt source       destination         
+KUBE-MARK-MASQ  all  --  10.244.1.29  0.0.0.0/0   /* test-ns/mysql */
+DNAT            tcp  --  0.0.0.0/0    0.0.0.0/0   /* test-ns/mysql */ tcp to:10.244.1.29:3306
+[root@server Pod-svc]# iptables -n -t nat -L KUBE-SEP-IIS3QMG2GSO3T7J6
+Chain KUBE-SEP-IIS3QMG2GSO3T7J6 (1 references)
+target          prot opt source       destination         
+KUBE-MARK-MASQ  all  --  10.244.1.30  0.0.0.0/0   /* test-ns/mysql */
+DNAT            tcp  --  0.0.0.0/0    0.0.0.0/0   /* test-ns/mysql */ tcp to:10.244.1.30:3306
+```
+
+```sh
+[root@k8s-slave ~]# ip route
+default via 192.168.149.2 dev ens33 proto dhcp metric 100 
+10.244.0.0/24 via 10.244.0.0 dev flannel.1 onlink 
+10.244.1.0/24 dev cni0 proto kernel scope link src 10.244.1.1 
+192.168.149.0/24 dev ens33 proto kernel scope link src 192.168.149.138 metric 100
+```
+
+```sh
+[root@k8s-slave]# tshark -i cni0 -d tcp.port==3306,mysql | grep MySQL
+Running as user "root" and group "root". This could be dangerous.
+Capturing on 'cni0'
+  9 0.005869482  10.244.1.29 -> 10.244.1.30  MySQL 144 Server Greeting proto=10 version=8.0.28
+41  12 0.006081900  10.244.1.30 -> 10.244.1.29  MySQL 102 Login Request user=
+ 13 0.006093351  10.244.1.30 -> 10.244.1.29  MySQL 102 [TCP Retransmission] Login Request user=
+121 125 30.193931048  10.244.1.29 -> 10.244.1.30  MySQL 144 Server Greeting proto=10 version=8.0.28
+162 127 30.194209727  10.244.1.30 -> 10.244.1.29  MySQL 102 Login Request user=
+```
+
+
+```sh
+root@mysql-6cf6b496d8-dmvm4:/# hostname -i
+10.244.1.30
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h 10.244.1.29 -p --port 3307
+ERROR 2003 (HY000): Cant connect to MySQL server on '10.244.1.29:3307' (111)
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h 10.244.1.29 -p --port 3306
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+...
+mysql> exit
+Bye
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h 10.102.120.27 -p --port 3306
+ERROR 2003 (HY000): Cant connect to MySQL server on '10.102.120.27:3306' (113)
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h 10.102.120.27 -p --port 3307
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+...
+mysql> exit
+Bye
+
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h mysql -p --port 3306
+ERROR 2003 (HY000): Cant connect to MySQL server on 'mysql:3306' (113)
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h mysql -p --port 3307
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+...
+mysql> exit
+Bye
+root@mysql-6cf6b496d8-dmvm4:/# cat /etc/resolv.conf 
+nameserver 10.96.0.10
+search test-ns.svc.cluster.local svc.cluster.local cluster.local localdomain
+options ndots:5
+
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h mysql-6cf6b496d8-c7bdm -p --port 3306
+ERROR 2005 (HY000): Unknown MySQL server host 'mysql-6cf6b496d8-c7bdm' (-3)
+root@mysql-6cf6b496d8-dmvm4:/# mysql -h mysql-6cf6b496d8-dmvm4 -p --port 3306
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+...
+mysql> exit
+Bye
+```
+
+
+
+
+```sh
+[root@server ~]# kubectl logs coredns-6f54f8b5df-m5djg -n kube-system | tail -n 8
+[INFO] 10.244.1.30:45602 - 59840 "AAAA IN mysql.test-ns.svc.cluster.local. udp 49 false 512" NOERROR qr,aa,rd 142 0.001001114s
+[INFO] 10.244.1.30:45602 - 444 "A IN mysql.test-ns.svc.cluster.local. udp 49 false 512" NOERROR qr,aa,rd 96 0.000446579s
+[INFO] 10.244.1.30:50117 - 44977 "AAAA IN mysql.test-ns.svc.cluster.local. udp 49 false 512" NOERROR qr,aa,rd 142 0.000523197s
+[INFO] 10.244.1.30:50117 - 5026 "A IN mysql.test-ns.svc.cluster.local. udp 49 false 512" NOERROR qr,aa,rd 96 0.000332753s
+[INFO] 10.244.1.30:40327 - 38656 "AAAA IN mysql-6cf6b496d8-c7bdm.svc.cluster.local. udp 58 false 512" NXDOMAIN qr,aa,rd 151 0.000603571s
+[INFO] 10.244.1.30:40327 - 53734 "A IN mysql-6cf6b496d8-c7bdm.svc.cluster.local. udp 58 false 512" NXDOMAIN qr,aa,rd 151 0.000495763s
+[INFO] 10.244.1.30:39544 - 65362 "AAAA IN mysql-6cf6b496d8-c7bdm.cluster.local. udp 54 false 512" NXDOMAIN qr,aa,rd 147 0.000239649s
+[INFO] 10.244.1.30:39544 - 10566 "A IN mysql-6cf6b496d8-c7bdm.cluster.local. udp 54 false 512" NXDOMAIN qr,aa,rd 147 0.000306718s
+```
+
+```sh
+[root@k8s-slave]# ip a
+28: vethb3ae9db3@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue master cni0 state UP group default 
+    link/ether 12:e8:29:4c:f5:cb brd ff:ff:ff:ff:ff:ff link-netnsid 7
+    inet6 fe80::10e8:29ff:fe4c:f5cb/64 scope link 
+       valid_lft forever preferred_lft forever
+
+[root@k8s-slave]# docker ps |grep mysql
+b71f43b9fd96   docker/ip-util-check   "bash -c 'ip route\n\n…"   47 minutes ago   Up 47 minutes             k8s_ip-tools_mysql-6cf6b496d8-dmvm4_test-ns_27a9ea4d-0614-45bd-9378-47904c1b7c8a_0
+80150e6fcd47   mysql                  "docker-entrypoint.s…"     47 minutes ago   Up 47 minutes             k8s_mysql_mysql-6cf6b496d8-dmvm4_test-ns_27a9ea4d-0614-45bd-9378-47904c1b7c8a_0
+
+[root@k8s-slave]# docker top 80150e6fcd47
+UID   PID    PPID   C  STIME  TTY    TIME      CMD
+polk  68914  68893  0  08:32  ?      00:00:15  mysqld
+root  70457  68893  0  08:33  pts/0  00:00:00  /bin/bash
+[root@k8s-slave]# nsenter -t 68914 -n
+[root@k8s-slave]# ip a
+3: eth0@if28: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UP group default 
+    link/ether 52:0d:e4:a1:79:ff brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.244.1.30/24 brd 10.244.1.255 scope global eth0
+       valid_lft forever preferred_lft forever
+```
+
+```sh
+[root@k8s-slave ~]# tshark -i vethb3ae9db3 -d tcp.port==3307,mysql
+Running as user "root" and group "root". This could be dangerous.
+Capturing on 'vethb3ae9db3'
+  1 0.000000000  10.244.1.30 -> 10.244.1.29  TCP 74 39912 > mysql [SYN] Seq=0 Win=28200 Len=0 MSS=1410 SACK_PERM=1 TSval=23166386 TSecr=0 WS=128
+  2 0.000024638  10.244.1.30 -> 10.244.1.29  TCP 74 [TCP Out-Of-Order] 39912 > mysql [SYN] Seq=0 Win=28200 Len=0 MSS=1410 SACK_PERM=1 TSval=23166386 TSecr=0 WS=128
+  3 0.000072329  10.244.1.29 -> 10.244.1.30  TCP 74 mysql > 39912 [SYN, ACK] Seq=0 Ack=1 Win=27960 Len=0 MSS=1410 SACK_PERM=1 TSval=23166386 TSecr=23166386 WS=128
+  4 0.000084144  10.244.1.30 -> 10.244.1.29  TCP 66 39912 > mysql [ACK] Seq=1 Ack=1 Win=28288 Len=0 TSval=23166386 TSecr=23166386
+  5 0.000434674  10.244.1.29 -> 10.244.1.30  MySQL 144 Server Greeting proto=10 version=8.0.28
+  6 0.000487634  10.244.1.30 -> 10.244.1.29  TCP 66 39912 > mysql [ACK] Seq=1 Ack=79 Win=28288 Len=0 TSval=23166386 TSecr=23166386
+  7 0.000529705  10.244.1.30 -> 10.244.1.29  MySQL 102 Login Request user=
+  8 0.000546984  10.244.1.29 -> 10.244.1.30  TCP 66 mysql > 39912 [ACK] Seq=79 Ack=37 Win=28032 Len=0 TSval=23166386 TSecr=23166386
+  9 0.001414759  10.244.1.30 -> 10.244.1.29  TCP 359 [TCP segment of a reassembled PDU]
+ 10 0.001436789  10.244.1.29 -> 10.244.1.30  TCP 66 mysql > 39912 [ACK] Seq=79 Ack=330 Win=29056 Len=0 TSval=23166387 TSecr=23166387
+ 11 0.002697357  10.244.1.29 -> 10.244.1.30  TCP 2251 [TCP segment of a reassembled PDU]
+ 12 0.002763598  10.244.1.30 -> 10.244.1.29  TCP 66 39912 > mysql [ACK] Seq=330 Ack=2264 Win=32640 Len=0 TSval=23166388 TSecr=23166388
+ 13 0.003339200  10.244.1.30 -> 10.244.1.29  TCP 176 [TCP segment of a reassembled PDU]
+ 14 0.003419406  10.244.1.30 -> 10.244.1.29  TCP 298 [TCP segment of a reassembled PDU]
+ 15 0.003630433  10.244.1.29 -> 10.244.1.30  TCP 321 [TCP segment of a reassembled PDU]
+ 16 0.003695591  10.244.1.29 -> 10.244.1.30  TCP 321 [TCP segment of a reassembled PDU]
+ 17 0.003768905  10.244.1.29 -> 10.244.1.30  TCP 94 [TCP segment of a reassembled PDU]
+ 18 0.003806728  10.244.1.29 -> 10.244.1.30  TCP 99 [TCP segment of a reassembled PDU]
+ 19 0.003897119  10.244.1.30 -> 10.244.1.29  TCP 66 39912 > mysql [ACK] Seq=672 Ack=2835 Win=38272 Len=0 TSval=23166390 TSecr=23166389
+ 20 0.003956613  10.244.1.30 -> 10.244.1.29  TCP 127 [TCP segment of a reassembled PDU]
+ 21 0.004174770  10.244.1.29 -> 10.244.1.30  TCP 180 [TCP segment of a reassembled PDU]
+ 22 0.043937371  10.244.1.30 -> 10.244.1.29  TCP 66 39912 > mysql [ACK] Seq=733 Ack=2949 Win=38272 Len=0 TSval=23166430 TSecr=23166390
+ 23 5.005800718 b2:eb:c9:96:74:d1 -> 52:0d:e4:a1:79:ff ARP 42 Who has 10.244.1.30?  Tell 10.244.1.29
+ 24 5.005817886 52:0d:e4:a1:79:ff -> b2:eb:c9:96:74:d1 ARP 42 10.244.1.30 is at 52:0d:e4:a1:79:ff
+ ```

@@ -1,0 +1,76 @@
+# Ingress
+
+## Installation
+
+[Installation can be found here.][install] (use ingress-nginx)
+
+## consist of
+
+* ingress-nginx-controller in ingress-nginx namespace：根据用户编写的ingress规则（创建的ingress的yaml文件），动态的去更改nginx服务的配置文件，并且reload重载使其生效（是自动化的，通过lua脚本来实现）；
+* ingress资源对象：将Nginx的配置抽象成一个Ingress对象，每添加一个新的Service资源对象只需写一个新的Ingress规则的yaml文件即可（或修改已存在的ingress规则的yaml文件）
+
+## lngress-nginx可解决什么问题呢？
+
+* 动态配置服务
+　　如果按照传统方式, 当新增加一个服务时, 我们可能需要在流量入口加一个反向代理指向我们新的k8s服务. 而如果用了Ingress-nginx, 只需要配置好这个服务, 当服务启动时, 会自动注册到Ingress的中, 不需要而外的操作。
+
+* 减少不必要的端口映射
+　　配置过k8s的都清楚, 第一步是要关闭防火墙的, 主要原因是k8s的很多服务会以NodePort方式映射出去, 这样就相当于给宿主机打了很多孔, 既不安全也不优雅. 而Ingress可以避免这个问题, 除了Ingress自身服务可能需要映射出去, 其他服务都不要用NodePort方式
+ 
+
+## lngress-nginx工作原理
+
+* ingress controller通过和kubernetes api交互，动态的去感知集群中ingress规则变化
+
+* 然后读取它，按照自定义的规则，规则就是写明了哪个域名对应哪个service，生成一段nginx配置；
+* 再写到nginx-ingress-controller的pod里，这个Ingress controller的pod里运行着一个Nginx服务，控制器会把生成的nginx配置写入/etc/nginx.conf文件中；
+* 然后reload一下使配置生效。以此达到域名分别配置和动态更新的问题；
+
+[reference here][ing-definition]
+
+## Ingress Controller
+
+[What is an IngressClass and why is it important for users of Ingress-NGINX controller now ?][ing-ctrl]
+
+    IngressClass is a Kubernetes resource. See the description below. Its important because until now, a default install of the Ingress-NGINX controller did not require any IngressClass object. From version 1.0.0 of the Ingress-NGINX Controller, an IngressClass object is required.   
+
+### Example
+
+```yaml
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+    name: ingress-dict
+    namespace: dictionary
+    annotations:
+        nginx.ingress.kubernetes.io/rewrite-target: /
+    labels:
+        name: ingress-dict
+    spec:
+    ingressClassName: nginx # 
+    rules:
+    - host: www.pwkldndqpxrsowfiekdnsnxk.com
+        http:
+        paths:
+        - pathType: Prefix
+            path: /
+            backend:
+            service:
+                name: nginx-svc
+                port: 
+                number: 80
+```
+> 如未将所装nginx ingress置为默认Ingress, 则必要添上**ingressClassName**。否则提交ingress.yaml到API Server，ingress-nginx-controller不会探测到。[see ref here.][ing-class]
+
+## nodePort, Ingress, LoadBalance
+
+[see this blog here][node-ing-lb]
+
+
+<!-- reference -->
+
+[install]: https://kubernetes.github.io/ingress-nginx/deploy/
+[ing-definition]: https://cloud.tencent.com/developer/article/1697493
+[ing-class]: https://www.51cto.com/article/703951.html
+[ing-ctrl]: https://kubernetes.github.io/ingress-nginx/
+[node-ing-lb]:https://medium.com/google-cloud/kubernetes-nodeport-vs-loadbalancer-vs-ingress-when-should-i-use-what-922f010849e0

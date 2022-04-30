@@ -1,0 +1,431 @@
+# 网络管理
+info|systV|systemd
+---|---|---
+内核|Linux2.6.x|Linux3.10.x
+文件系统|EXT4|   |XFS
+||/etc/sysconfig/
+主机名|network/|/etc/hostname    `hostnamectl set-hostname`
+网卡配置|network-scripts/ifcfg-ens33|/etc/network/interfaces
+时间|clock/|`timectl`
+语言|i18n/|`localectl`
+时间同步|`ntpq -p`|`chronyc sources`
+防火墙|`iptables`|`firewall`
+数据库|MySQL|MariaDB
+||`service`|`systemctl`
+||`s start`|`start s`
+||`s restart`|`restart s`
+||`s stop`|`stop s`
+||`s status`|`status s`
+||`--status-all`|`list-units`
+服务boot自启动  |`chkconfig s on` (ONBOOT)|`enable s` (auto)
+boot不自启动|`chkconfig s off`|`disenable s`
+||`chkconfig --list`|`list-unit-files`
+网卡|eth0|ens33
+网络配置|`ifconfig/setup`|`ip/nmtui`
+网络Service|network: `netstat`|NetworkManager: `nmcli d` or `ss`
+---
+
+
+### 网络配置:
++ `nmtui`
+
+IpV4:
+Address: 192.168.2.100/24
+>24是子网掩码mask。表示24个1:1111,1111,1111=255 即255.255.255.0
++ `ip address show`
+    
+    lo: local host
+    ens33: 
+
+### 网卡配置
+
+    /etc/sysconfig/network-scripts/ifcfg-ens33
+    
+    配置文件内容：
+    DEVICE=ens33            #设备名称
+    NAME=ens33              #网卡名称
+    BOOTPROTO=static        #连接方式（dhcp/static）
+    ONBOOT=yes              #是否开机加载
+    IPADDR=192.168.12.250   #IP地址
+    NETMASK=255.255.255.0   #子网掩码（PREFIX=24）
+    GATEWAY=192.168.12.1    #网关
+    DNS1=8.8.8.8            #DNS
+
+eg1:
+
+    /etc/network/interfaces
+    (man interfaces/  man bridge-utils-interfaces)
+
+    auto eth0   # eth0 is brought up at boot开机加载
+    # eth1 is brought up whenever the network hardware  is  detected
+    allow-hotplug eth1
+    iface eth0 inet dhcp        # eth0 uses  DHCP  for  IPv4
+    iface eth0 inet6 auto       # eth0 SLAAC  for IPv6
+    
+    # eth1 configured with static IPv4 and IPv6 addresses.
+    iface eth1 inet static
+        address 192.168.1.2/24
+        gateway 192.168.1.1
+    iface eth1 inet6 static
+        address fec0:0:0:1::2/64
+        gateway fec0:0:0:1::1
+eg2:
+
+    auto br0
+    iface br0 inet static
+        address 10.1.254.101
+        netmask 255.255.255.0
+        network 10.1.254.0
+        broadcast 10.1.254.255
+        gateway 10.1.254.50
+        dns-nameservers 10.1.254.252
+        bridge_ports bond0
+        bridge_stp off
+
+    iface bond0 inet manual
+        bond-slaves eth0 eth1
+        bond_mode balance-rr
+        bond_miimon 100
+
++ 修改网卡名
+
+修改网卡配置文件名（建议将原配置文件备份）
+
+    `cp -a ifcfg-ens33 ifcfg-eth0`
+    修改ifcfg-eth0网卡配置文件内容
+    NAME=eth0
+    DEVICE=eth0
+    修改grub配置文件
+    vi /etc/default/grub
+    GRUB_CMDLINE_LINUX="
+    rd.lvm.lv=centos/root rd.lvm.lv=centos/swap rhgb quiet  net.ifnames=0 biosdevname=0"
+    #在指定位置新增红色参数，关闭一致性命名规则
+    更新grub配置文件，并加载新的参数
+    grub2-mkconfig -o /boot/grub2/grub.cfg
+    重启操作系统
+    reboot
+
+局域网IP
+
+    10.0.0.0 - 10.255.255.255
+    172.16.0.0 - 172.31.255.255
+    192.168.0.0 - 192.168.255.255
+
+## 关闭防火墙, SELinux
+
+### 防火墙
+
+Centos 6关闭防火墙
+
+    service iptables stop #临时关闭防火墙
+    chkconfig iptables off  #彻底关闭系统防火墙
+    service iptables status  #查看防火墙的状态
+    or
+    iptables -L
+
+防火墙还需要关闭ipv6的防火墙：
+
+    chkconfig ip6tables off
+
+并且可以通过如下命令查看状态：
+
+    chkconfig --list iptables
+
+Centos 7关闭防火墙
+
+    systemctl stop firewalld.service #停止firewall
+    systemctl disable firewalld.service #禁止firewall开机启动
+    firewall-cmd --state #查看默认防火墙状态(关闭后显示notrunning，开启后显示running)
+    or
+    systemctl status firewalld
+### SELinux
+
++ selinux状态查看:
+    * `Sestatus`
+    * `getenforce`
+
+三种运行模式:
+
+    Enforce: 强制模式，SELinux 正在运行中，已经在限制 domain/type
+    Pemissive: SELinux 正在运行中，但仅发出警告信息,并不会实际限制 domain/type 的存取(permissive模式可以用在测试环境中供调试规则时使用)
+    disabled:关闭，SELinux 没有实际运行。
+
++ `setenforce 0|1`
+    * 1: Enforce
+    * 0: Pemissive
+
++ 修改 /etc/selinux/config 文件中的 SELINUX= 为 disabled, 然后重启(/etc/sysconfig/selinux)
+
+有的软件对于selinux的安全规则支持不够好，就会建议在安装前把selinux先关闭.例如:k8s:
+
+# 安装,命令的查询检测
+
+命令所在文件
+`which cmd`
+
+命令依赖库
+`ldd /path/cmd`
+以lib开头
+
+pkg所在安装包
+`rpm -q pkg` or `dpkg-query --search pkg` or `dpkg -S pkg`
+
+pkg依赖
++ `rpm -q --provides pkg` or `apt-cache -depends pkg`
++ `rpm -q -R pkg` or `apt-cache -rdepends pkg`
+
+https://help.ubuntu.com/community/SwitchingToUbuntu/FromLinux/RedHatEnterpriseLinuxAndFedora
+
+
+
+# SSH
+
+    /etc/ssh/sshd_config
+
+## 1. cmd
++ `ssh -p PORT user@IP`
+
++ `ssh -keygen -t rsa -b 4096`
+    * -t rsa
+    * -b 4096: >1024
++ `ssh-copy-id` or `scp`
+
+## 2. files
+
+    /etc/ssh/sshd_config    ssh server配置文件
+    ~/.ssh/authorized_keys  记录密钥登陆的用户pub
+    ~/.ssh/known_hosts      分发自己的pub给client并记录所有密码登录的用户
+    ~/.ssh/id_rsa           自己的密钥
+    ~/.ssh/id_rsa.pub       自己的pub文件
+
+## 3. 密钥登陆
+> 从1(client)登录2(server), 需要1将id_rsa.pub添加到2的authorized_keys 内.`scp` or `ssh-copy-id`
+
+## 4. 密码登录
+> 从1(client)登录2(server),2将从know_hosts发送pub给1, know_hosts记录1的信息
+
+## 5. 禁止使用密码登录
+
+`vi /etc/ssh/sshd_config`
+
+    PasswordAuthentication no
+
+## 6. 传输
++ `scp -P PORT `
++ `sftp`
+
+
+## TCP Wrappers
+
+1. 查看对应服务命令所在位置
+
+    which sshd
+
+2. 查看指定命令执行时是否调用libwrap.so文件
+
+    ldd /usr/sbin/sshd | grep libwrap.so
+
+配置文件编写规则:
+
+    service_list@host: client_list
+    service_list: 是程序(服务)的列表,可以是多个,多个时,使用,隔开
+    @host:设置允许或禁止他人从自己的哪个网口进入。这一项不写,就代表全部
+    client_list:是访问者的地址,如果需要控制的用户较多,可以使用空格或,隔开
+
+eg.配置文件:
+
+    hosts.allow:空着
+    hosts.deny:sshd:192.168.88.20
+    拒绝某一网段使用 ssh 远程连接:
+    hosts.allow:空着
+    hosts.deny:sshd:192.168.88.
+    仅允许某一 IP 使用 ssh 远程连接:
+    hosts.allow:sshd:192.168.88.20
+    hosts.deny:sshd:ALL
+
+# DHCP(Dynamic Host Configuration Protocol)
+局域网网络协议; UDP
+
+# VSFTP
++ `get file`:download,需要dir的`r`权限
++ `put file`:upload, 需要dir的`w`权限
+## 1. anonymous
+
+client:
+
+`ftp IP`: ftp, nopasswd
+
+server:
+
+`vi /etc/vsftp/vsftp.conf`
+
+    anon_upload_enable=YES
+    anon_*
+
+
+## 2. user
+client:
+
+`useradd -s /sbin/nologin user_name`
+
+`ftp IP`    : username, passwd
+
+server:
+
+`vi /etc/vsftp/vsftp.conf`:
+    
+    chroot_local_user=YES
+    chroot_list_enablt=YES
+    chroot_list_file=/etc/vsfpt/chroot_list
+
+ERRORs:
+"500 OOPS: vsftpd: refusing to run with writable root inside chroot ()":
+https://www.benscobie.com/fixing-500-oops-vsftpd-refusing-to-run-with-writable-root-inside-chroot/
+
+1. local_root=/var/ftp
+
+2. passwd_chroot_enable=YES
+
+3. allow_writeable_root=YES (vsftpd/vsftpd-ext)
+
+
+## 3. vitrual user
+
+## 4. 抓包工具
+使用tcpdump 工具进行指定端口抓包,抓取ftp登录过程中的数据包:
+
+`tcpdump -i eth0 -nn -X -vv tcp port 21 and ip host 来源ip`
+
+    -i  #interface:指定tcpdump需要监听的接口
+    -n  #对地址以数字方式显式,否则显式为主机名
+    -nn #除了-n的作用外,还把端口显示为数值,否则显示端口服务名
+    -X  #输出包的头部数据,会以16进制和ASCII两种方式同时输出
+    -vv #产生更详细的输出
+## 5. openssl
+
+# Samba
+
+    /etc/samba/smb.conf
+    netstat -antp
+    139，445
+
+1. 修改配置文件
+
+(添加自定义共享)
+
+    [任意名称会显示在Share下]
+        comment = ...
+        path = /path/to/share
+        public = yes
+        browseable = yes
+        writable = yes
+
+2. 创建共享目录并给定相应权限
+
++ `mkdir /path/to/share`
++ `chmod 777 /path/to/share`
+    * 最好使用 ACL 权限 `setfacl -m u:name:rwx /path/to/share`
+
+3. 测试配置文件并重启服务
++ `testparm`
++ `service smb restart` or `systemctl restart smb`
+
+4. 创建用户
+    
+    * 创建 Linux 用户
+
+        + `useradd -s /sbin/nologin user_name`
+        <!-- +  `passwd user_name` #不需要创建系统密码 -->
+
+    * 转为 samba 用户
+
+        + `pdbedit -a user_name`
+
+>smb 采用Linux用户名(/etc/passwd),自建database(pdb)密码库
+
+5. 客户端查看共享文件夹并登录测试
++ `smbcient -U user_name -L IP`
++ `smbclient -U user_name //IP/sharefile`
+
+## Errors:
+
+    PROTOCOL NEGOTIATION FAILED: NT_STATUS_IO_TIMEOUT
+在服务器编辑 /etc/hosts 添加本机解析:
+
+    # IP                  host
+    192.168.149.139     server
+
+
+# NFS
+    /etc/exports
+    共享目录 client1(访问权限,用户映射,其他) client2(访问权限,用户映射,其他)
+
+## firewall
+
+
+    firewall-cmd --permanet --add-service=nfs
+    firewall-cmd --permanet --add-service=rpc-bind
+    firewall-cmd --permanet --add-service=mountd
+
+## server
+`yum install nfs-utils-*`
+`sudo apt-get install nfs-kernel-server`
+
+## client
+`sudo apt install nfs-common`
+
+
+1. 将NFS服务器的/home/zhangsan共享给192.168.115.0网段,rw权限
+
+`vi /etc/exports`    
+    
+    /home/zhangsan 192.168.115.0(rw)
+    修改之后执行`exportfs -a`即可不用重启
+
+注意这里的rw，之后仍需要给目录文件赋权限
+VM虚拟机连接记得IP后带上网关即192.168.149.0/24
+
+2. 重启rpcbind 和nfs 服务
+    * `service rpcbind restart`
+    * `service nfs restart`
+    * `exportfs`
+3. 服务器端查看nfs共享状态
+    * `showmount -e 本机ip` # 查看自己共享的服务
+4. 客户端查看nfs共享状态
+    *  `showmount -e NFS服务器IP`
+5. 客户端挂载nfs服务器共享目录
+    命令格式:mount NFS服务器IP:共享目录 本地挂载点目录
+    `mount –o vers=3 共享 本地   #指定挂载使用nfs V3版本(避免同步延迟)`
+
+## 自动挂载:/etc/fstab
+
+    格式:<server>:</remote/export> </local/directory> nfs < options> 0 0
+    192.168.115.10:/home/zhangsan /media/zhangsan nfs defaults 0 0
+    mount –a
+
+
+## 验证客户端和nfs服务器端文件是否一致:
+
+    修改服务器端相应权限,不然客户端无法正常访问和使用
+    给server目录other写权限
+
+## **Errors**
+1. mount.nfs: access denied by server while mounting
+
+192.168.149.0/24
+mount –o vers=3 IP:共享path 本地path
+Sometimes the NFS server may only support NFSv3 connections. By default the mount command uses NFSv4, which may result is the error. To avoid this specify the NFSv3 while mounting the share.
+mount -t nfs -o nfsvers=3 x.x.x.x:/share /mnt
+
+[mount.nfs: access denied by server while mounting – how to resolve](https://www.thegeekdiary.com/mount-nfs-access-denied-by-server-while-mounting-how-to-resolve/)
+
+2. exportfs: No host name given with /home/share_nfs (rw)
+
+192.168.149.0(rw), 注意格式host和privilege之间没有空格
+
+### Reference
+[How To Set Up an NFS Mount on Ubuntu 20.04](https://www.digitalocean.com/community/tutorials/how-to-set-up-an-nfs-mount-on-ubuntu-20-04)
+
+# rsync
+
+## inotify

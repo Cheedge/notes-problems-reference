@@ -1,0 +1,727 @@
+# MySQL
+
+## 0. prepare
+
+1. apt-get install ssh
+
+2. 给port打开防火墙
+
+ubuntu:
+`ufw allow ssh`
+
+systemd:
+`firewall-cmd --add-port 3306/tcp --permenant`
+
+sysV: 
+`iptables -A INPUT -p tcp --dport 3306 -j ACCEPT`
+
+3. sftp
+
+    如用ftp另一端需要安装vsftpd: `ftp user@IP`
+    
+    而sftp同scp一样是内涵在ssh中的只不过比ftp加密传输慢:
+    `sftp user@IP`
+
+4. user
+
+create mysql nologin user
+
+    groupadd mysql
+    # useradd command uses the -r and -s /bin/false options to create a user that does not have login permissions to your server host.
+    useradd -r -g mysql -s /bin/false mysql
+
+## 1. intall
+### 1.1 [yum(add repo)yum](https://dev.mysql.com/doc/mysql-yum-repo-quick-guide/en/)
+
+配置文件:   /etc/my.cnf
+
+            datadir=/var/lib/mysql
+            log-error=/var/log/mysql.log 
+            #也可直接设置在lib/mysql中
+            pid-file=/var/run/mysql/mysql.pid
+
+log文件:(在datadir中)
+
+            /var/lib/mysql/binlog.***
+            /var/lib/mysql/relaylog
+
+
+
+0. download
+
+[Yum Repo](https://dev.mysql.com/downloads/repo/yum/)
+
+    centos6
+    ***el6-5.noarch.rpm
+    centos7
+    ***el7-5.noarch.rpm
+
+1. Adding the MySQL Yum Repository
+
+    `sudo rpm -Uvh platform-and-version-specific-package-name.rpm`
+
+2. Selecting a Release Series
+
+    `yum repolist all | grep mysql`
+
+3. install
+
+    `yum search mysql`
+    `yum install mysql` or `yum install mysqld`
+    `apt-cache search mysql`
+    `apt-get install mysql`
+
+4. start server and 
+    `service mysqld start`
+    `chkconfig mysqld on`
+
+5. passwd
+    `grep 'temporary password' /var/log/mysqld.log`
+
+6. login
+    `mysql -u root -p`
+    `mysql> ALTER USER 'root'@'localhost' IDENTIFIED BY 'MyNewPass4!';`
+
+* 先检查
+    + 装了没
+        -  `rpm -qa pkg`
+    + 有没有
+        - `yum search pkg`
+
+eg.
+
+    tar -xf **.bz2
+    tar (child): lbzip2: Cannot exec: No such file or directory
+    tar (child): Error is not recoverable: exiting now
+
+    rpm -qa bzip2
+    yum search bzip2
+
+
+### 1.2 tgz(binary)
+
+
+    cd /usr/local
+
+    ln -s full-path-to-mysql-VERSION-OS mysql
+    cd mysql
+    #mkdir mysql-files
+    #chown mysql:mysql mysql-files
+    #chmod 750 mysql-files
+    mkdir -p /var/lib/mysql/data
+    # 并将此data文件写入my.cnf的datadir中，保持其内为空
+
+    bin/mysqld --initialize --user=mysql
+    说明: --initialize 选项默认以“安全”模式来初始化,则会为 root 用户生成一个密码并将 该密码标记为过期 ,登录后你需要设置一个新的密码。生成的 临时密码 会往日志中记录一份。
+    查看密码:
+    cat /var/log/mysqld.log
+
+    bin/mysql_ssl_rsa_setup
+    # 对centos7/debian/ubuntu可用systemctl而不用mysqld_safe
+    bin/mysqld_safe --user=mysql &
+    # 开机自启非必要,可通过sytemctl管理
+    cp support-files/mysql.server /etc/init.d/mysql.server
+
+#### *REFERENCES*
+[4.3.2 mysql safe](https://dev.mysql.com/doc/refman/5.7/en/mysqld-safe.html)
+
+[2.5.10 Managing MySQL Server with systemd](https://dev.mysql.com/doc/refman/5.7/en/using-systemd.html)
+
+#### 1.2.1 Bundle
+
+    配置文件:   /etc/my.cnf
+    data文件:   /var/lib/mysql
+    log文件:    /var/log/mysqld.log
+
+
+    tar xvf /path/to/mysql-VERSION-OS-bundle.tar
+    # /opt存放root的安装包
+    rpm -ivh mysql-community-common-8.0.25-1.el7.x86_64.rpm
+    rpm -ivh mysql-community-client-plugins-8.0.25-1.el7.x86_64.rpm
+    rpm -ivh mysql-community-libs-8.0.25-1.el7.x86_64.rpm
+    rpm -ivh mysql-community-client-8.0.25-1.el7.x86_64.rpm
+    rpm -ivh mysql-community-icu-data-files-8.0.28-1.el7.x86_64.rpm
+    rpm -ivh mysql-community-server-8.0.25-1.el7.x86_64.rpm
+
+### **Errors**
+
+1. Signature Checking Using RPM
+
+Header V4 RSA/SHA1 Signature, key ID 1c0c4a5d: NOKEY
+
+`rpm --checksig package_name.rpm`
+If you are using RPM 4.1 and it complains about (GPG) NOT OK (MISSING KEYS: GPG#3a79bd29),
+
+`rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022`
+[check rpm signature](https://dev.mysql.com/doc/refman/8.0/en/checking-rpm-signature.html)
+
+2. mariadb-server-5.5.35-3.el7.x86_64 
+               mariadb-server = 1:5.5.35-3.el7
+           Obsoleted By: mysql-community-server-5.6.25-2.el7.x86_64 (mysql56-community)
+               
+yum -y remove mariadb-libs
+
+3. install perl
+
+error: Failed dependencies:
+
+    /usr/bin/perl is needed by MySQL-server-5.6.21-1.el6.i686
+
+yum install perl
+or
+[perl install in mysql](https://dev.mysql.com/doc/mysql-installation-excerpt/8.0/en/perl-installation.html)
+
+---
+
+### 1.3 [SRC 安装](https://dev.mysql.com/doc/refman/8.0/en/installing-source-distribution.html)
+
+    配置文件:   /etc/my.cnf
+    data文件:   /var/lib/mysql/data
+    log文件:    /var/log/mysql.log
+
+
+    # 卸包
+    rpm2cpio myrpmfile.rpm | cpio -idmv
+
+    # 装cmake(自己安装的库装到/usr/local/lib里)
+    download cmake (>=3) (wget)
+    tar -xvf **.tar -C /usr/local/lib
+
+    yum install libaio ncurses gcc git gcc-c++
+    yum install devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils
+
+    # 装boost在rpm中
+    tar -xvf boost-**.tar.bz2 -C /usr/local/lib
+
+    yum install openssl openssl-devel ncurses-devel
+
+    OPTION:
+    yum install bison libudev-devel 
+
+    # 在 mysql/ 中建 build/ 来 build:
+    mkdir build && cd build/
+
+    cmake ../ -DWITH_BOOST=/usr/local/lib/boost_1_73_0
+    -DCMAKE_INSTALL_PREFIX=/usr/local/path_to_mysql 
+    (-DEXTRA_CHARSETS=all -DDEFAULT_CHARSET=utf8 -DDEFAULT_COLLATION=utf8_general_ci
+    -DWITH_MYISAM_STORAGE_ENGINE=1 -DWITH_INNOBASE_STORAGE_ENGINE=1
+    -DWITH_MEMORY_STORAGE_ENGINE=1 -DWITH_READLINE=1 -DENABLED_LOCAL_INFILE=1
+    -DMYSQL_USER=mysql -DMYSQL_TCP_PORT=3306)
+
+    # 时间很长
+    make    # 空间不足会造成失败
+    make install
+
+    mysqld --initialize --user=mysql
+    # 首次登陆免密码,用:
+    # mysql -uroot --skip-password
+    mysqld --initialize-insecure --user=mysql
+
+> 切记先不要使用这条ssl设置的命令: mysql_ssl_rsa_setup
+
+    vi /etc/my.cnf
+    # 将此data文件写入mycnf的datadir中，保持其内为空
+    datadir=/var/lib/mysql/data
+    # 创建/var/lib/mysql目录并recursively改所属
+    chown -R /var/lib/mysql
+
+    pid-file=/var/lib/mysql/mysql.pid
+    # 创建/var/run/mysql目录并recursively改所属
+    mkdir /var/run/mysql/mysql.pid
+    chown -R /var/run/mysql
+    
+    # 开机自启
+    cp /usr/local/mysql/support-files/mysql.server /etc/init.d/mysqld
+    # 见mysql.server文件
+    ln -s /usr/local/mysql/support-files/mysql.server /etc/rc0.d/S99mysql
+    ln -s /usr/local/mysql/support-files/mysql.server /etc/rc3.d/K01mysql
+
+    # 可用systemctl管理但开机自启需要chkconfig来设置或者echo文件中
+    systemctl start|stop|restart|status mysqld
+    # 但设置开机自启只能用
+    chkconfig mysqld on
+
+#### **Errors**
+
+* ssl 问题: 
+    + ssl_ctx_set_default_verify_paths failed 
+    + error 2026(hy000)ssl connection error didn't find key on read or update
+
+[Error: caching_sha2_password](https://dev.mysql.com/doc/refman/8.0/en/caching-sha2-pluggable-authentication.html)
+    
+    关闭ssl
+    vi /etc/my.cnf添加
+    skip_ssl
+    (这时无法登陆, caching_sha2_password require...)
+
+    将public_key.pem复制过到本地
+    scp host:/var/lib/mysql/data/public_key.pem .
+
+    并在此登录, 加上参数--server-public-key-path=
+    mysql -u root (--ssl-mode=disabled) -h host_IP -p --server-public-key-path=public_key.pem
+
+    现在可登录, 且可通过
+    show variables like "%ssl%";    #查看显示
+    have_ssl=disabled               # 即ssl关闭
+    
+
+    下次登录时可直接登录
+    mysql -uroot -h host_IP -p
+
+* ERROR:
+'cryptography' package is required for sha256_password or caching_sha2_password auth methods
+
+`pip install cryptography`
+
+* PID 问题
+
+不要systemctl开启一次再用service开启, pid会重复造成失败
+
+* "utf8_general_ci NOT VALID for utf8mb4"
+
+so:
+    
+    最好别设置!
+    -DDEFAULT_CHARSET=utf8 -DDEFAULT_COLLATION=utf8_general_ci
+    
+
+在文件中改
+
+    mkdir /var/lib/mysql
+    mysqld --character-set-server=utf8 --collation-server=utf8_unicode_cs
+
+* [Can't connect to local MySQL server through socket "/tmp/mysql.sock"(2)](https://developpaper.com/can-t-connect-to-local-mysql-server-through-socket-tmp-mysql-sock-2/)
+
+把mysql.sock文件`ln -s`给/tmp/下即可
+
+* [MySQL报错：Segmentation fault (core dumped)](https://scmtahes4ktcbh.xyz/posts/mysql%E6%8A%A5%E9%94%991/)
+
+把 terminal_set 方法中的 char buf[TC_BUFSIZE]; 注释掉，将 area = buf 改为 area = NULL
+
+#### *REFERENCE*
+
+[CentOS 7.4 使用源码包编译安装MySQL 5.7.25](https://www.jianshu.com/p/469b398811c6)
+
+[Linux系统中如何安装mysql的源码包](https://blog.csdn.net/lamp_yang_3533/article/details/52979089)
+
+[源码包安装MySQL](https://www.programminghunter.com/article/4028839605/)
+
+[2.10.1 Initializing the Data Directory](https://dev.mysql.com/doc/refman/8.0/en/data-directory-initialization.html)
+
+[2.9.4 Installing MySQL Using a Standard Source Distribution](https://dev.mysql.com/doc/refman/8.0/en/installing-source-distribution.html#installing-source-distribution-postinstallation)
+
+[5.4.2.2 Default Error Log Destination Configuration](https://dev.mysql.com/doc/refman/8.0/en/error-log-destination-configuration.html)
+
+#### mysql官方指导源码安装
+
+    groupadd mysql
+    useradd -r -g mysql -s /bin/false mysql
+    # Beginning of source-build specific instructions
+    tar zxvf mysql-VERSION.tar.gz
+    cd mysql-VERSION
+    mkdir build
+    cd build
+    cmake ..
+    make
+    make install
+    # End of source-build specific instructions
+    # Postinstallation setup
+    cd /usr/local/mysql
+    mkdir mysql-files
+    chown mysql:mysql mysql-files
+    chmod 750 mysql-files
+    bin/mysqld --initialize --user=mysql
+    bin/mysql_ssl_rsa_setup
+    bin/mysqld_safe --user=mysql &
+    # Next command is optional
+    cp support-files/mysql.server /etc/init.d/mysql.server
+
+
+## 2. Management
+
+### 2.0 修改root密码, 验证
+
+
+`vi /etc/mysql/my.cnf`
+`skip-grant-tables`
+`update mysql.user set password=password('*new_pswd*') where user='root';`
+修改root密码并本地登录
+
+    mysql -u root -p
+    ALTER USER "root"@"localhost" IDENTIFIED BY "newpasswd";
+    或
+    /usr/local/mysql/bin/mysqladmin -uroot password 123456
+
+远程登录
+
+    use mysql;
+    select Host,User from user;
+    # 当前主机配置信息为localhost。
+    # 修改Host为通配符%
+    # Host列指定了允许用户登录所使用的IP
+    # eg. user=root Host=192.168.1.1。这里的意思就是说root用户只能通过192.168.1.1的客户端去访问
+        Host="192.168.1.%",那么就表示只要是IP地址前缀为“192.168.1.”的客户端都可以连接。
+        Host="%" ,表示所有IP都有连接权限。
+    #注意:在生产环境下不能为了省事将host设置为%,这样做会存在安全问题,具体的设置可以根据生产环境的IP进行设置。
+    update user set host = '%' where user ='root';
+     # 必须flush否则Error:2003
+    flush privileges;
+
+### **Errors**
+
+cacheing_sha2_password
+
+分析: 刚才修改的是localhost没有修改远程的root密码
+
+解决:
+
+    server上:
+
+    mysql -u root -p
+    ALTER USER 'root'@'192.168.149.%' IDENTIFIED WITH mysql_native_password BY 'newpassword';
+
+
+### 2.1 create user
+### 2.2 grant/revoke privilage
+### 2.3 mysqldump/mysql
+1. DML
+```SQL
+SHOW VARIABLES LIKE "%secure%";
+```
+
+    +--------------------------+-----------------------+
+    | Variable_name            | Value                 |
+    +--------------------------+-----------------------+
+    | require_secure_transport | OFF                   |
+    | secure_file_priv         | /var/lib/mysql-files/ |
+    +--------------------------+-----------------------+
+
+```SQL
+SELECT * FROM de_en INTO OUTFILE "/var/lib/mysql-file/de_en81683.txt";
+```
+
+`sftp`
+
+```SQL
+CREATE de_en_81683(id INT NOT NULL AUTO_INCREMENT, German varchar(32) NOT NULL, English VARCHAR(256) NOT NULL, Note TEXT, PRIMARY KEY(id));
+
+ALTER TABLE de_en_81683 MODIFY COLUMN German VARCHAR(256);
+
+LOAD DATA INFILE "/var/lib/mysql-files/de_en81683.txt" INTO TABLE de_en_81683(German, English, Note);
+```
+
+**Error**
+ERROR 1290 (HY000): The MySQL server is running with the --secure-file-priv option so it cannot execute this statement
+
+`vi /etc/mysql/mysql.conf`
+
+    secure_file_priv = ""
+    
+`mysql> SET GLOBAL secure_file_priv = "/tmp/";`
+
+2. mysqldump
+
+## 3. Backup
+### 3.1 binlog
+
+
+## 5 Master & Slaver
+
+    # UUID
+    /var/lib/mysql/auto.cnf
+
+### 主从同步: 基于 binlog 的数据同步
+    
+    master:
+    [mysqld]
+    #[必须]主服务器唯一ID: 任意不同数字即可
+    server-id=139
+    #[必须]启用二进制日志,指名路径。比如:本地的路径/log/mysqlbin
+    log-bin=/var/lib/mysql/binlog
+
+    #[可选] 0(默认)表示读写(主机),1表示只读(从机)
+    read-only=0
+    #设置日志文件保留的时长,单位是秒
+    binlog_expire_logs_seconds=6000
+    #控制单个二进制日志大小。此参数的最大和默认值是1GB
+    max_binlog_size=200M
+    #[可选]设置不要复制的数据库
+    binlog-ignore-db=test
+    #[可选]设置需要复制的数据库,默认全部记录。比如:binlog-do-db=atguigu_master_slave
+    binlog-do-db=需要复制的主数据库名字
+    #[可选]设置binlog格式
+    binlog_format=STATEMENT
+
+    slave:
+    [mysqld]
+    #[必须]从服务器唯一ID
+    server-id=136
+
+    #[可选]启用中继日志
+    relay-log=mysql-relay
+
+主机:建立账户并授权slave:
+
+    CREATE USER 'slave1'@'%' IDENTIFIED BY '123456';
+    GRANT REPLICATION SLAVE ON *.* TO 'slave1'@'%';
+    #此语句必须执行。。
+    ALTER USER 'slave1'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+    
+    flush privileges;
+
+> `mysql -u slave1 -h 172.18.0.2 -P 3306 -p`
+> 来验证是否可以登录,以防止:
+> Last_IO_Error: error connecting to master 'slave@172.18.0.2:3308' - retry-time: 60 retries: 1 message: Can't connect to MySQL server on '172.18.0.2:3308' (111)
+> -P 是master的port(3306)而并非master暴露的port(3308)
+
+> `show grants for user_name;`查看是否授权;
+> `select user, host from mysql.user;`查看是否创建slave;
+> `cat /etc/hostname`, `cat /etc/hosts`查看ip及hostname信息
+
+
+
+从机
+
+    CHANGE REPLICATION SOURCE TO
+    SOURCE_HOST='主机的IP地址',
+    SOURCE_USER='slave用户名',
+    SOURCE_PORT=3306,
+    SOURCE_PASSWORD='slave的密码',
+    SOURCE_LOG_FILE='mysql-bin.具体数字',
+    SOURCE_LOG_POS=具体值;
+
+    START SLAVE;
+> Notice:
+> 1. SOURCE_HOST:   `hostname -I`
+> 2. SOURCE_USER:   在主数据库创建的用于同步数据(slave)的用户账号
+> 3. SOURCE_PORT:   是master的port(3306)而并非master暴露的port(3308)
+
+#### **Errors**
+
+    Slave_IO_Running: Yes
+    Slave_SQL_Running: No
+    Last_Error: Coordinator stopped because there were error(s) in the worker(s). The most recent failure being: Worker 1 failed executing transaction 'ANONYMOUS' at master log binlog.000006, end_log_pos 1022. See error log and/or performance_schema.replication_applier_status_by_worker table for more details about this failure or others, if any.
+
+binlog是binary文件可通过`mysqlbinlog binglog.000001`来查看
+
+**原因分析**
+发现都是anonymous操作造成的，即对binlog-do-db和binlog-ignore-db之外的database进行操作，系统认为是Anonymous的操作。导致系统停止.
+
+**解决方法**
+
+    mysql> STOP SLAVE;
+    mysql> SET GLOBAL SQL_SLAVE_SKIP_COUNTER = 1;
+    mysql> START SLAVE;
+    mysql> SHOW SLAVE STATUS;
+
+> 不对binlog-do-db, binlog-ignore-db之外文件进行操作.把所有文件都添加到binlog-do-db, binlog-ignore-db两类中.(可以在/etc/my.cnf 配置)
+
+Reference:
+
+[Slave_SQL_Running: No: MySQL replication stopped working](https://serverfault.com/questions/872911/slave-sql-running-no-mysql-replication-stopped-working)
+
+[16.4.4 Troubleshooting Replication](https://dev.mysql.com/doc/refman/5.7/en/replication-problems.html)
+
+### 读写分离
+
+
+### 6. Read & Write
+
+# Redis
+## 0. 依赖库
+
+    gcc
+
+## 1. 安装
+1. cd /usr/local/src
+
+`wget https://download.redis.io/releases/redis-6.2.6.tar.gz`
+
+2. tar xzf redis-6.2.6.tar.gz
+3. cd redis-6.2.6
+4. make
+5. make install
+
+    把命令加到/usr/local/bin里面
+
+6. 默认安装目录
+
+/usr/local/bin
+
+    redis-benchmark:性能测试工具，可以在自己本子运行，看看自己本子性能如何
+    redis-check-aof：修复有问题的AOF文件，rdb和aof后面讲
+    redis-check-dump：修复有问题的dump.rdb文件
+    redis-sentinel：Redis集群使用
+    redis-server：Redis服务器启动命令
+    redis-cli：客户端，操作入口
+
+## 2. 后台启动(不推荐前台启动)
+
+备份redis.conf
+
+`cp /opt/redis-3.2.5/redis.conf /myredis`
+
+后台启动设置daemonize no改成yes
+
+    vi redis.conf
+    daemonize yes   #一定要设置，否则见下面Errors,无法启动的情况
+
+Redis启动
+`redis-server/myredis/redis.conf`
+### 2.0 客户端登录
+用客户端访问：`redis-cli`
+多个端口可以：`redis-cli -h IP -p 6379`
+
+    -h IP:      连接指定的 redis 服务器
+    -p 6379:    指定 redis 服务器的端口
+    -a 密码:    使用密码登录
+    -n 数据库号: 指定连接哪个数据库
+    --raw:      redis 支持存储中文
+
+## 3. 开机自启
+
+`cp /redis/path/utils/redis_init_script /etc/init.d/redis`
+
+添加环境变量REDISPATH,并修改CONF=${REDISPATH}/redis.conf
+
+`chkconfig redis on`
+
+## 4. 主从复制
+[Replication](https://redis.io/topics/replication)
+
+[Redis主从复制的配置和实现原理](https://juejin.cn/post/6844903943764443149)
+
+主服务器: 192.168.149.136
+从服务器: 192.168.149.139
+
+vi redis.conf
+
+    # 设置为后台运行
+    daemonize yes
+    # 保存pid的文件，如果是在一台机器搭建主从，需要区分一下
+    pidfile /var/run/redis_6379.pid
+    # 绑定的主机地址，这里注释掉，开放ip连接
+    #bind 127.0.0.1
+    或者
+    bind 127.0.0.1 192.168.149.136
+    # 指定日志文件
+    logfile "6379.log"
+
+从服务器
+
+    replicaof <masterip> <masterport>
+
+`info replication` 查看复制信息
+
+> [redis主从配置及无法连接处理](https://blog.csdn.net/zetion_3/article/details/83898599):*就是没设密码造成的redis一定要有密码*
+
+    vi /usr/local/redis/redis.conf
+    主
+    requirepass <password>
+    从
+    masterauth <master password>
+
+**Errors**
+
++ 主服务器登陆时, 记得加上参数-a否则无法写数据
+
+    (error) NOAUTH Authentication required.
+    
+    `redis-cli -p 6379 -a <passwd>`
+
++ 从服务器只读不可写
+
+    (error) READONLY You can't write against a read only replica.
+
+
+## 5. **Errors**
+### 5.1 
+>redis设置开机自启动，没有设置后台运行，重启时centos卡住. 即当daemonize no时, 则无法重启.
+解决方法:
+1. centos启动时按e键
+2. e键进入子菜单
+3. 添加init=/bin/bash
+4. enter返回上一级->b键重启
+5. 重启开机
+
+进入bash
+
+    vi redis.conf添加
+    daemonize yes
+
+    若更改文件显示无权限，执行mount -o remount,rw /
+    后重新更改
+
+6. 保存退出->重启
+
+refer:
+[重启时centos卡住](https://blog.csdn.net/qq_30923243/article/details/105337156)
+
+### 5.2 主connected_slaves:0 从master_link_status:down
+
+即主从未连接
+
+*就是没设密码造成的redis一定要有密码*
+具体解决见上面
+
+# HOW TO add yum repo
+YUM Repository configuration files must:
+
+1. be located in /etc/yum.repos.d/ directory
+2. have .repo extension, to be recognized by YUM
+
+Available YUM Repository configuration file options are:
+
+    1. Repository ID:
+        One word unique repository ID (example: [examplerepo])
+    2. Name:
+        Human readable name of the repository (example: name=Example Repository)
+    3. Baseurl:
+        URL to the repodata directory. You can use file://path if repository is located locally or ftp://link, http://link, https://link if repository is located remotely - HTTP Authentication available http://user:password@www.repo1.com/repo1 (example: baseurl=http://mirror.cisp.com/CentOS/6/os/i386/)
+    4. Enabled:
+        Enable repository when performing updates and installs (example: enabled=1)
+
+    5. Gpgcheck:
+        Enable/disable GPG signature checking (example: gpgcheck=1)
+    6. Gpgkey:
+        URL to the GPG key (example: gpgkey=http://mirror.cisp.com/CentOS/6/os/i386/RPM-GPG-KEY-CentOS-6)
+    7. Exclude:
+        List of the packages to exclude (example: exclude=httpd,mod_ssl)
+    8. Includepkgs:
+        List of the packages to include (example: include=kernel)
+
+eg.
+
+    [ol7_software_collections]
+    name=Software Collection packages for Oracle Linux 7 ($basearch)
+    baseurl=http://yum.oracle.com/repo/OracleLinux/OL7/SoftwareCollections/$basearch/
+    gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-oracle
+    gpgcheck=1
+    enabled=1
+
+and get gpgkey
+
+    wget http://public-yum.oracle.com/RPM-GPG-KEY-oracle-ol7 -O /etc/pki/rpm-gpg/RPM-GPG-KEY-oracle
+
+# HOW TO set ssl
+
+    ca-key.pem         # CA私钥
+    ca.pem             # 自签的CA证书，客户端连接也需要提供
+    client-cert.pem    # 客户端连接服务器端需要提供的证书文件
+    client-key.pem     # 客户端连接服务器端需要提供的私钥文件
+    private_key.pem    # 私钥/公钥对的私有成员
+    public_key.pem     # 私钥/公钥对的共有成员
+    server-cert.pem    # 服务器端证书文件
+    server-key.pem     # 服务器端私钥文件
+
+    # 到data_dir目录下修改.pem文件的所属权限用户为mysql
+    chown mysql:mysql *.pem
+    
+    show global variables like '%ssl%';
+    
+    # /etc/my.cnf添加
+    skip_ssl
+
+[MySQL服务器开启SSL加密功能](https://blog.51cto.com/moerjinrong/2367282)
+
+[为SSL配置了MySQL，但SSL仍被禁用！](https://cn.arip-photo.org/253934-configured-mysql-for-ssl-but-HRGERP)

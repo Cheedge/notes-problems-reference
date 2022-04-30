@@ -1,0 +1,80 @@
+# Kubernetes: NodePort,LoadBalancer,Ingress
++ [理解Kubernetes的NodePort、LoadBalancer和Ingress](https://www.51cto.com/article/703031.html)
+* [Kubernetes NodePort vs LoadBalancer vs Ingress? When should I use what?](https://medium.com/google-cloud/kubernetes-nodeport-vs-loadbalancer-vs-ingress-when-should-i-use-what-922f010849e0)
+* [Kubernetes的三种外部访问方式：NodePort、LoadBalancer 和 Ingress](https://dockone.io/article/4884)
+* 
+# iptables
+* [Working with iptables](https://www.networkworld.com/article/2716098/working-with-iptables.html#:~:text=You%20can%2C%20however%2C%20easily%20check,depending%20on%20your%20Linux%20distribution.&text=You%20can%20also%20query%20iptables,will%20list%20the%20active%20rules.)
+* [iptables unrecognized service- How we easily resolve it?](https://bobcares.com/blog/iptables-unrecognized-service/)
+* 
+
+# tshark
+* [tshark tutorial and filter examples](https://hackertarget.com/tshark-tutorial-and-filter-examples/)
+* [tshark(1) Manual Page](https://www.wireshark.org/docs/man-pages/tshark.html)
+# tcpdump
+* [tcpdump: Capturing with “tcpdump” for viewing with Wireshark](https://www.wireshark.org/docs/wsug_html_chunked/AppToolstcpdump.html)
+* [TCPDUMP 抓包和 Wireshark 分析](https://helloqb.xyz/post/2021/0531_tcpdump.html)
+
+
+# pod communication
+ 
+* [跨主机的pod之间是如何通信的](https://segmentfault.com/a/1190000038820441#:~:text=Pod%E4%B9%8B%E9%97%B4%E9%80%9A%E4%BF%A1%E7%9A%84,%E5%BE%97%E5%88%B0%E5%9F%9F%E5%90%8D%E5%AF%B9%E5%BA%94%E7%9A%84IP%E3%80%82)
+* [Kubernetes之POD、容器之间的网络通信](https://network.51cto.com/article/620287.html)
+* [窥探 kubernetes 中 pod 之间的通信](https://testerhome.com/articles/24797)
+
+# 如何传递ip环境变量
+* [给应用注入数据](https://kubernetes.io/zh/docs/tasks/inject-data-application/_print/)
+
+# Pod 启动流程
+ 
+* [Pod 启动流程详解](https://www.cnblogs.com/kkbill/p/13044908.html)
+* [Kubernetes -- pod启动的流程](https://segmentfault.com/a/1190000040817721)
+ 
+# ping
+* [K8S 面试题：service 到底能不能 ping 通](https://segmentfault.com/a/1190000039349716)
+* [Pod容器内部无法ping 通ClusterIP或ServiceName](https://blog.csdn.net/Urms_handsomeyu/article/details/106294085)
+* [kubernetes 在pod内无法ping通servicename和ClusterIP的解决方法](https://blog.51cto.com/u_15080021/4000120)
+* [k8s集群节点ping不通其他主机的ip](https://www.csdn.net/tags/MtTaEgxsNTc2NjUwLWJsb2cO0O0O.html)
+* [k8s 问题排查Pod内无法ping通集群外部的网络IP](https://www.cnblogs.com/wswind/p/14808756.html)
+## ping, curl, telnet, nc
+* [Linu网络判断指令ping、curl、telnet的区别与应用场景](https://blog.csdn.net/lovedingd/article/details/120533536)
+* [linux 测试端口及接口连接是否成功 nc curl wget](https://www.cnblogs.com/davis12/p/14447047.html)
+* [centos7服务器发现curl一个ip通，ping同一ip却不通？](https://segmentfault.com/q/1010000014165190)
+* [linu网络判断指令ping、curl、telnet的区别与应用场景](https://www.cnblogs.com/ttaylor/p/13951112.html)
+
+# telnet
+* [How to fix “telnet: connection refused by remote host” error?](https://bobcares.com/blog/telnet-connection-refused-by-remote-host/)
+
+
+# uwsgi invalid request block size
+* [Things to know (best practices and “issues”) READ IT !!!](https://uwsgi-docs.readthedocs.io/en/latest/ThingsToKnow.html)
+* [invalid request block size 21573](https://stackoverflow.com/questions/39424823/invalid-request-block-size-21573)
+
+
+# ingress
+## ingressClassName: nginx
+* [理解Kubernetes中的Nginx Ingress](https://www.51cto.com/article/703951.html)
+* [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/)
+
+## Nginx Ingress异常问题排查
+* [Nginx Ingress异常问题排查](https://help.aliyun.com/document_detail/405072.html)
+* [添加Ingress失败或无法正常访问](https://support.huaweicloud.com/cce_faq/cce_faq_00313.html)
+* [k8s ingress-nginx网络无法访问到容器问题](https://www.jianshu.com/p/4e1a97577e33)
+* [记一次kubernetes v1.18.7 ingress访问异常问题及解决](https://www.fenghong.tech/blog/kubernetes/kubernetes-ingress-bug-1.18.8/)
+* [网络无法访问](https://cloud.tencent.com/document/product/457/40332)
+
+## K8s——Ingress-nginx原理及配置
+* [K8s——Ingress-nginx原理及配置](https://cloud.tencent.com/developer/article/1697493)
+* [k8s (八）通过Ingress-nginx暴露service给外部网络访问](https://blog.csdn.net/qq_21187515/article/details/112497544)
+* [K8S笔记04 -- 使用Ingress统一访问入口](https://blog.csdn.net/zhangxm_qz/article/details/119711667)
+
+# DNS
+* [kubernetes dns解析](https://fafucoder.github.io/2020/07/08/kubernetes-dns/)
+* [运维手册——kubernetes容器不能解析内网部分DNS](https://rugod.cn/2020/11/20/kubernetes/Kubernetes-pod-dns/#%E9%A6%96%E6%AC%A1%E6%8E%92%E6%9F%A5)
+* [解决 Kubernetes 中 Pod 无法正常域名解析问题分析与 IPVS parseIP Error 问题](http://www.mydlq.club/article/78/)
+* [KubeDNS not working inside of pod when its containers are on the same node with kube-dns containers. #21613](https://github.com/kubernetes/kubernetes/issues/21613)
+* [关于k8s 内部pod无法解析外部域名的解决办法](https://blog.51cto.com/niubdada/4286034)
+
+# SDN网络指南
+* [SDN网络指南](https://feisky.gitbooks.io/sdn/content/)
+

@@ -1,0 +1,169 @@
+# install
+
+主要以下:防火墙, seLinux, swap, 时间sychronic, hosts, net.bridge.bridge-nf-call-iptables
+
+## centos7安装时一些特例
+
+1. repo的问题，yum安装修改yum.repo.d/kubernetes.repo内设置 [repo_gpgcheck=0][1]
+
+2. pod间通信设置
+br_netfilter是built-in module在linux内核 < Linux 3.18时, 所以不用添加([查看版本命令][2]):
+`uname -I` or `cat /etc/os-release`
+
+
+3. 时间设置
+选[chrony][3], 不选ntpdate
+
+refer:
+
+[1]: https://github.com/kubernetes/kubernetes/issues/100757 "title"
+* [Expired key - "Google Cloud Packages Automatic Signing Key" #1982](https://github.com/kubernetes/release/issues/1982)
+
+[2]: https://www.cyberciti.biz/faq/how-to-check-os-version-in-linux-command-line/ "check linux core"
+* [br_netfilter missing in ubuntu 14.04](https://askubuntu.com/questions/677827/br-netfilter-missing-in-ubuntu-14-04)
+
+[3]: https://docs.fedoraproject.org/en-US/Fedora/24/html/System_Administrators_Guide/ch-Configuring_NTP_Using_the_chrony_Suite.html#:~:text=One%20of%20the%20main%20differences,time%20reference%20to%20work%20well.
+
+### 开放接口对接不同的后端
+
+bridge.bridge-nf-call-iptables
+
+[An illustrated guide to Kubernetes Networking](https://itnext.io/an-illustrated-guide-to-kubernetes-networking-part-1-d1ede3322727)
+
+### Errors
+
+* 启动kubelet失败
+
+vi /var/log/messages
+
+Failed to load kubelet config file" err="failed to load Kubelet config file /var/lib/kubelet/config.yaml, error failed to read kubelet config file \"/var/lib/kubelet/config.yaml\", error: open /var/lib/kubelet/config.yaml: no such file or directory" path="/var/lib/kubelet/config.yaml"
+
+
+原因:没执行init
+
+kubeadm init
+
+
+### Kubernetes Node节点主机名 修改
+
+    kubectl drain <node_name_to_rename>
+    kubectl delete node <original-nodename>
+Then on the node that you want to rejoin, as root:
+    kubeadm reset
+check the output and see if it applies to your setup (for potential further cleanup).
+Now generate the join command on the master node:
+
+    export KUBECONFIG=/etc/kubernetes/admin.conf #(or wherever you have it)
+    kubeadm token create --print-join-command
+
+Run the output on the worker node you have just reset:
+
+    kubeadm join <masternode_ip_address>:6443 --token somegeneratedtoken --discovery-token-ca-cert-hash sha256:somesha256hashthatyougotfromtheabovecommand
+
+* [修改Kubernetes主节点（控制节点）名称](https://www.1024sou.com/article/58676.html)
+* [Kubernetes Node节点主机名 修改](https://blog.51cto.com/u_15072914/4726937)
+* [修改 kubernetes master 主机名(hostname)与节点名称(node name)](https://www.cnblogs.com/dudu/p/14286983.html)
+* [How to change name of a kubernetes node](https://stackoverflow.com/questions/46006716/how-to-change-name-of-a-kubernetes-node)
+
+### 节点加入k8s集群如何获取token等参数值
+
+token expire time 24h
+certificate-key expire time 2h
+
+* [节点加入k8s集群如何获取token等参数值](https://blog.csdn.net/dazuiba008/article/details/94595451)
+
+2. The connection to the server localhost:8080 was refused - did you specify the right host or port?
+
+all user
+    $ mkdir -p $HOME/.kube
+    $ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    $ sudo chown $(id -u):$(id -g) $HOME/.kube/config
+    $ export KUBECONFIG=/etc/kubernetes/admin.conf
+
+root user
+    $ export KUBECONFIG=/etc/kubernetes/admin.conf
+
+> root的export方法除非写入bash否则重启则需重新export，所以不如直接用第一种
+
+
+
+### Scaling
+
+  kubectl get statefulsets <stateful-set-name>
+  kubectl scale statefulsets <stateful-set-name> --replicas=<new-replicas>
+
+Make in-place updates:
+
+Alternatively, you can do in-place updates on your StatefulSets.
+
+If your StatefulSet was initially created with kubectl apply, update .spec.replicas of the StatefulSet manifests, and then do a kubectl apply:
+
+  kubectl apply -f <stateful-set-file-updated>
+
+Otherwise, edit that field with kubectl edit:
+
+  kubectl edit statefulsets <stateful-set-name>
+
+Or use kubectl patch:
+
+  kubectl patch statefulsets <stateful-set-name> -p '{"spec":{"replicas":<new-replicas>}}'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## ConfigMap
+create configmap for master and slave
+
+1. mk configmap.yaml
+name: config-mysql
+
+2. claim volumes in pod
+Volums:
+  - name: config-db-vol
+    ConfigMap:
+    - name: cofig-mysql
+  ...
+
+3. mount this volume to pod
+sepc:
+  volumeMounts:
+  - name: config-db-vol
+    mountPath: /arbitary/path/in/container/
+
+4. create an emptyDir volume
+Volums:
+  - name: config
+    emptyDir: {}
+
+5. initContainer cp conf file to /etc/msyql/conf.d
+sepc:
+  volumeMounts:
+  - name: config
+    mountPath: /path/for/config/
+
+
+## Service
+
+### Mysql
+1. HeadLess service --> master
+2. normal service --> slave
+
+## Analysis
+
+1. kubectl describe pod <podname> -n <namespace>
+2. kubectl logs <podname> -n <namespace>
+3. kubectl logs <podname> -c <containername> -n <namespace>
+4. kubectl exec -it 

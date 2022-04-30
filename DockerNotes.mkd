@@ -1,0 +1,376 @@
+# docker install
+
+## docker install
+    yum install gcc, gcc-c++
+
+    yum install yum-utils
+    yum-config-manager \
+        --add-repo \
+        https://download.docker.com/linux/centos/docker-ce.repo
+
+
+    yum makecache fast
+
+    yum install docker-ce docker-ce-cli containerd.io
+
+## docker-compose install
+    curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+    chmod +x /usr/local/bin/docker-compose
+
+# docker file
+
+build image to run container
+
+
+
+
+
+
+# docker compose file
+
+compose the order of container running
+
+
+
+
+
+
+
+
+# docker run
+
+port, name, volumn, network, params
+-p: port
+--name:
+-
+-v: volumn
+-e: params
+-d: deamon
+
+
+
+
+
+
+
+
+
+
+
+# master and slave
+
+# Nginx + Flask(uwsgi) + Mysql + Redis
+
+
+
+
+
+### **Error**
+[Linux]File “/bin/yum-config-manager“, line 135 except yum.Errors.RepoError, e:
+yum采用Python作为命令解释器，而我们将Python升级为Python3之后,由于python版本之间兼容性不太好，使得2.X版本与3.0版本之间存在语法不一致问题,CentOS 7自带的yum采用的是python2.7，当系统将python升级到3.7后，出现语法解释错误.
+
+修改方式
+到指定文件添加2.7版本的注明,使用旧版本
+vim /usr/bin/yum-config-manager
+
+    #!/usr/bin/python2 -tt
+
+
+## configurations
+
+0. Network configure:
+    * nginx-flask:      nginx_flask_net
+    * flask-mysql:      flask_mysql_net
+    * flask-redis:      flask_redis_net
+
+    `docker network create net_name`
+
+1. Mysql container (master+slave)
+    * image:    official
+    * name:     mysql_master, mysql_slave
+    * network:  flask_mysql_net(mysql之间通讯不需要IP, 但外部访问mysql时要提供hostIP和port所以要固定IP就需构建自定义network)
+    * port
+        + master:   3307:3306
+        + slave:    3308:3306
+    * volumn
+        + /docker/mysql/conf    /etc/mysql
+            包含master和slave的cnf, run后cp到各自/etc下my.cnf
+        + /docker/mysql/master/data_log    /var/lib/mysql/
+        + /docker/mysql/slave/data_log      /var/lib/mysql/
+            master和slave的/var/lib/mysql/(即mycnf中datadir项), 需要对应不同的data和log的目录
+
+cmd
+
+`docker pull mysql`
+
+    docker run --privileged=true
+                -p 3307:3306
+                --name mysql_master
+                --network flask_mysql_net
+                -v /docker/mysql/conf:/etc/mysql/conf.d
+                -v /docker/mysql/master/datalog:/var/lib/mysql/
+                -e MYSQL_ROOT_PASSWORD=...
+                -d mysql
+
+>注意上面并未进行主从配置，所以仍需要 `exec-it` 进入, 进行配置
+
+配置文件:   /etc/my.cnf
+
+            datadir=/var/lib/mysql
+            log-error=/var/log/mysql.log 
+            #也可直接设置在lib/mysql中
+
+log文件:(在datadir中)
+
+            /var/lib/mysql/binlog.***
+            /var/lib/mysql/relaylog
+
+
+主服务器: 建立账户并授权slave
+
+    CREATE USER 'slave1'@'%' IDENTIFIED BY '123456';
+    GRANT REPLICATION SLAVE ON *.* TO 'slave1'@'%';
+    
+    # 更改密码使用
+    #ALTER USER 'slave1'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+    
+    FLUSH PRIVILEGES;
+
+> `mysql -u slave1 -h 172.18.0.2 -P 3306 -p`
+> 来验证是否可以登录,以防止:
+> Last_IO_Error: error connecting to master 'slave@172.18.0.2:3308' - retry-time: 60 retries: 1 message: Can't connect to MySQL server on '172.18.0.2:3308' (111)
+> -P 是master的port(3306)而并非master暴露的port(3308)
+
+> `show grants for user_name;`查看是否授权;
+> `select user, host from mysql.user;`查看是否创建slave;
+> `cat /etc/hostname`, `cat /etc/hosts`查看ip及hostname信息
+
+从服务器
+
+    CHANGE REPLICATION SOURCE TO
+    SOURCE_HOST='172.18.0.2',
+    SOURCE_PORT=3306,
+    SOURCE_USER='slave',
+    SOURCE_PASSWORD="666666",
+    SOURCE_LOG_FILE="binlog.000005",
+    SOURCE_LOG_POS=806;
+
+    START SLAVE;
+> Notice:
+> 1. SOURCE_HOST:   `hostname -I`
+> 2. SOURCE_USER:   在主数据库创建的用于同步数据(slave)的用户账号
+> 3. SOURCE_PORT:   是master的port(3306)而并非master暴露的port(3308)
+
+
+2. Redis container (cluster 1 master + 1 worker)
+    * image:    official
+    * name:     redis_master, redis_worker
+    * network:  flask_redis_net
+    * port
+        + master:   6380:6379
+        + slave:    6381:6379
+    * volumn
+        + /docker/redis/redis.conf /user/local/redis/redis.conf
+        + /docker/run   /var/run
+        + /docer/log    /var/log
+
+**redis的cluster模式下**
+
+cmd: 
+
+    docker run
+        --name redis-node-N
+        --net host --port 6381
+        (--net redis_net -p 6381:6379)
+        --privileged=true
+        -v /docker/redis/node-N:/data 
+        -d redis
+        --cluster-enabled yes
+        --appendonly yes
+        
+
+`docker exec -it redis-node-1 /bin/bash
+
+    redis-cli --cluster create
+                172.19.0.2:6379
+                172.19.0.3:6379
+                172.19.0.4:6379
+                172.19.0.5:6379
+                172.19.0.6:6379
+                172.19.0.7:6379
+                --cluster-replicas 1
+
+> 注意: 1. 这里net用host则端口为映射(暴露)port，而如果net用自定义name_net，则为本来port
+> 注意: 2. Redis Cluster requires at least 3 master nodes.否则出现Error.
+> 注意: 3. cluster模式下, 运行时需注意加上参数`-c`, 否则超出范围报错:(error) MOVED 12706 172.19.0.4:6379
+
+**redis单机主从模式下**
+
+vi redis.conf
+
+    # 设置为后台运行
+    daemonize yes
+    # 保存pid的文件，如果是在一台机器搭建主从，需要区分一下
+    pidfile /var/run/redis_6379.pid
+    # 绑定的主机地址，这里注释掉，开放ip连接
+    #bind 127.0.0.1
+    或者
+    bind 127.0.0.1 192.168.149.136
+    # 指定日志文件
+    logfile "6379.log"
+
+
+
+从服务器
+
+    replicaof <masterip> <masterport>
+    vi /usr/local/redis/redis.conf
+    主
+    requirepass <password>
+    从
+    masterauth <master password>
+
+`docker run --name myredis --privileged=true -p 6390:6379 -v /root/Nginx_Flask/docker/redis/myredis/:/data -it redis`
+
+3. Flask(uwsgi) container
+    * image:    FROM cetos official build(Dockerfile)
+    * name:     flask
+    * network:  nginx_flask_net, flask_mysql_net, flask_redis_net
+    * port:     5000:5000
+    * volumn
+        + /docker/project/ /project
+        + /docker/uwsgi.ini /uwsgi.ini
+        + python
+
+
+`docker run -d --privileged=true --name=web_app -p 5000:5000 flask_img`
+
+4. Nginx container
+    * image:    official
+    * name:     nginx
+    * network:  nginx_flask_net
+    * port:     80:80
+    * volumn
+        + /docker/nginx/nginx.conf /etc/nginx/nginx.conf
+        + /docker/project/  /project
+        + /docker/run   /var/run
+        + /docer/log    /var/log
+
+## Dockerfile
+
+COPY file directory subdir
+ADD 
+RUN copy
+
+对外暴露的port指的是browser访问所用的port
+格式为 EXPOSE <端口1> [<端口2>...]。
+EXPOSE 指令是声明容器运行时提供服务的端口，这只是一个声明，在容器运行时并不会因为这个声明应用就会开启这个端口的服务。在 Dockerfile 中写入这样的声明有两个好处，一个是帮助镜像使用者理解这个镜像服务的守护端口，以方便配置映射；另一个用处则是在运行时使用随机端口映射时，也就是 docker run -P 时，会自动随机映射 EXPOSE 的端口。
+要将 EXPOSE 和在运行时使用 -p <宿主端口>:<容器端口> 区分开来。-p，是映射宿主端口和容器端口，换句话说，就是将容器的对应端口服务公开给外界访问，而 EXPOSE 仅仅是声明容器打算使用什么端口而已，并不会自动在宿主进行端口映射。
+
+>端口映射以及暴露端口是其他service来访问该service时用的，不是他访问其他service时用的
+>在启动容器的时候，如果不指定对应的端口，在容器外是无法通过网络来访问容器内的服务。端口映射机制将容器内的服务提供给外部网络访问，实质上就是将宿主机的端口映射到容器中，使得外部网络访问宿主机的端口便可访问容器内的服务。
+
+Reference
+* [EXPOSE 暴露端口](https://yeasy.gitbook.io/docker_practice/image/dockerfile/expose)
+* [docker数据管理与dockerfile创建、端口映射网络通信](https://blog.csdn.net/m0_50434960/article/details/112872228)
+* [Docker 端口映射、镜像创建（dockerfile）](https://blog.51cto.com/u_15072780/4384533#a)
+* []
+
+
+ docker ps |awk '{print $1}' | xargs docker stop
+apt-get/yum install:
+ps          procps
+ping        iputils-ping
+ifconfig    net-tools
+
+ufw         ufw
+
+brctl
+
+## 宿主机(HOST), 虚拟机(VM), 容器(docker container)
+    HOST----VM_1----container_1
+        |        |--container_2
+        |        |--container_3
+        |---VM_2
+    HOST: 192.168.149.1(即网关)
+    VM_1: 192.168.149.138
+    VM_2: 192.168.149.136
+    container_1: 172.17.0.2(bridge)
+    container_2: 172.18.0.2(self defined network)
+    container_3: 192.168.149.138(host)
+### VM_1 <--> container_1
+* docker network: host, bridge 可直接ping通
+### container_1 <--> container_2
+* docker network connect container_1_net container_2_net
+
+将container_1_net and container_2_net连接在同一IP字段下:
+
+    container_1_net: bridge(172.17.0.2)
+    container_2_net: self_defined_net(172.18.0.2)
+    after connect:
+    container_2_net:1. self_defined_net(172.18.0.2)
+                    2. bridge(172.17.0.3)
+* docker run --link container_1
+
+
+### HOST --> container_1
+* 端口映射
+
+eg.
+
+    docker -p 3309:3306
+    无ping法通，ping访问的是80端口，但可由端口映射(VM_1)登录访问:
+    mysql -uroot -h 192.168.149.138 --port 3309 -p
+
+    (记住给root加权grant)
+
+### container_1 --> HOST
+
+
+### HOST --> container_3
+
+VM_1
+
+
+#### Reference
+* [宿主机访问虚拟机内的Docker静态IP](https://learnku.com/articles/50231)
+* [外部网络通过端口映射访问部署在虚拟机里Docker中的Web应用](https://lkun.github.io/2018/12/31/docker/%E5%A4%96%E9%83%A8%E7%BD%91%E7%BB%9C%E9%80%9A%E8%BF%87%E7%AB%AF%E5%8F%A3%E6%98%A0%E5%B0%84%E8%AE%BF%E9%97%AE%E9%83%A8%E7%BD%B2%E5%9C%A8%E8%99%9A%E6%8B%9F%E6%9C%BA%E9%87%8CDocker%E4%B8%AD%E7%9A%84Web%E5%BA%94%E7%94%A8/)
+* [解决Docker容器内访问宿主机MySQL数据库服务器的问题](https://www.cnblogs.com/gaidy/p/11344942.html)
+* [实现不同网段docker容器网络互通](https://blog.csdn.net/IT_Bigboy_sz/article/details/95025290)
+* [ping 不通容器 宿主_Docker容器间通信](https://codeantenna.com/a/n2UUTLWcuN)
+* [docker 容器网络配置](https://blog.csdn.net/qq_37502106/article/details/103545159)
+* [Docker容器间网络通信的方案 - 运维笔记](https://www.cnblogs.com/kevingrace/p/6590319.html)
+* [外部访问容器](https://yeasy.gitbook.io/docker_practice/network/port_mapping)
+* [Docker：Docker网络管理（宿主机和容器互相访问，容器间互相访问，跨机器访问）](https://www.jianshu.com/p/5db52e909f59)
+* [VMware修改默认的E1000网卡](https://www.hicode.club/articles/2022/01/27/1643275320735.html)
+
+
+
+##
+* Cannot connect to the Docker daemon at unix:///var/run/docker.sock.
+* Failed to start Docker Application Container Engine.
+docker 的clinent在使用run/pull/build等命令，需要首先与docker daemon建立连接才能运行
+
+docker未启动，是由于dockerd daemon 为正常启动，daemon未正常启动时因为1.daemon.json中格式问题，2. 系统的xfs版本过低不能支持graphdriver(其实xfs文件系统问题man dockerd查看)
+
+    # check socket is up.(send request to it)
+    curl --unix-socket /var/run/docker.sock  http://localhost/_ping; echo
+
+    dockerd -D -l
+    journalctl -xefu docker
+    vi /var/log/message
+
+/etc/docker/daemon.json
+
+安装docker后，使用systemctl start docker无法启动：
+
+* Error while creating filesystem xfs on device...error initializing graphdriver: exit status 1
+[graphdriver] prior storage driver devicemapper failed
+storage-driver=devicemappe depracated, 这是因为XFS文件系统管理工具的版本太低，使用如下命令升级：
+
+`yum update xfsprogs -y`
+
+再次启动docker，就可以发现可以正常启动了：
+
+[CentOS7安装docker启动报错Error while creating filesystem xfs on device docker-253:0-1052028-base: exit status 1 storage-driver=devicemappe](https://www.cnblogs.com/hanxiaomeng/p/12887262.html)

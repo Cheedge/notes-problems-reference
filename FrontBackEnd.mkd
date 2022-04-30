@@ -1,0 +1,69 @@
+# Frontend pass variable
+
+## GET
+### use form 
+```html
+<form action="..." method="POST">
+</form>
+```
+### use Ajax
+```html
+<input class="text" ...></input><button id="search_btn"></button>
+```
+```javascript
+$("#search_btn").on("click", function(){
+	var srch_content = $("input[id'search_in']").val()
+	location.href = '{{ url_for("**backend_func_name**") }}?**backend_var_name**=...'+srch_content
+})
+
+```
+
+## POST
+```html
+<form action="..." method="POST">
+</form>
+```
+# Backend
+```python
+# Flask
+def search():
+	# recv search word
+	word = request.args.get("backend_var_name")
+	# search in sql
+	front = ClassName.query.filter(...).all()
+	return render_template('*.html', frontend_content_name=front)
+```
+Note: this `request.args.get()` is in flask, not urllib. and not flask.Request.
+```python
+# Flask(form)
+def search():
+	# recv search word
+	if request.method == 'POST":
+		name = request.form['name']
+		...
+	# search in sql
+	front = ClassName.query.filter().all()
+	return render_template('*.html', frontend_content_name=front)
+	
+```
+
+# Front -> Back(SQLAlchemy)
+## Front
+```javascript
+```
+## Back
+```python
+```
+# Front -> Back(Cache)
+## Front
+```javascript
+```
+## Back
+```python
+```
+
+# Front(Cache, Ajax)
+## Front
+```javascript
+```
+

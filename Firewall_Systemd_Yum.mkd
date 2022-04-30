@@ -1,0 +1,65 @@
+# Firewall
+
+1. check service port
+
+`grep service_name /etc/services`
+
+## firewall-cmd
+`firewall-cmd --list-all` or `firewall-cmd --list-services/ports`
+
+`firewall-cmd --permanet --add-service=service_name`
+or
+`firewall-cmd --permanet --add-port=port`
+
+[How To Set Up a Firewall Using firewalld on CentOS 8](https://www.digitalocean.com/community/tutorials/how-to-set-up-a-firewall-using-firewalld-on-centos-8)
+[Open a Port or Service](https://firewalld.org/documentation/howto/open-a-port-or-service.html)
+
+## ufw
+`ufw status
+
+`ufw allow from client_IP to any port service_name`
+
+
+
+
+## iptables
+`iptables -A INPUT -p tcp --dport 111 -j ACCEPT`
+## firewall 无法正常re启动
+systemctl stop firewalld
+pkill -f firewalld
+systemctl start firewalld
+
+
+
+配置开机启动
+[CentOS 7 安装Nginx 并配置自动启动](https://blog.csdn.net/stinkstone/article/details/78082748)
+
+# Systemd
+## systemctl
+
+## service/chkconfig
+
+##  systemd configuration file
+
+
+
+# Yum
+## yum/rpm
+## apt-get/apt-cache/dpkg
+
+
+# 模糊搜索
+rpm -qa | grep name
+yum search name\*
+
+
+sudo apt-cache search name\*
+
+
+对于RPM包，常用的命令是rpm和rpmbuild。rpm的一些常用命令记录如下：
+rpm -e xxxxx，删除某个rpm包
+rpm -q xxxxx，查询某个rpm包是否存在，如果存在，给出rpm详细的名字。但是有时我们有时需要模糊查询，不确切知道rpm包的名字，这是我们可以用yum search xxx来进行检索，yum给出在repo中的相关的包，同时也会给出本地的包（如果这个包不是repo中标准的包，另外安装的，也会给出）。我们也可以通过rpm -qa 得到已安装的所有包的名字，rpm -qa | grep xxx，也可以当作模糊检索。
+rpm -ivh xxxxxxx.rpm，用于安装某个rpm包，如果版本检查不符合要求，而想强制安装（不建议这样），可以加上--force的参数。
+rpm -ivhU，安装版本比原来的高，如果我们删除rpm -e，可能其他包会依赖这个包，系统拒绝删除，我们直接增加U的参数，表示Update即可
+rpm -qpl xxxxxxx.rpm，给出这个rpm包所包含的内容
+rpm -qf <file_name>，查看某个文件归属于哪个rpm包

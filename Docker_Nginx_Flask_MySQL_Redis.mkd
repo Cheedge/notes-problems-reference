@@ -1,0 +1,483 @@
+# 1. Structure
+    COMPOSE
+    ├── flask
+    │   └── project
+    │       ├── static
+    │       │   ├── css
+    │       │   └── js
+    │       └── templates
+    ├── mysql
+    │   ├── master
+    │   │   ├── conf
+    │   │   └── datalog
+    │   │       └── data
+    │   │           ├── Dictionary
+    │   │           ├── #innodb_temp
+    │   │           ├── mysql
+    │   │           ├── performance_schema
+    │   │           └── sys
+    │   └── slave
+    │       ├── conf
+    │       └── datalog
+    │           └── data
+    │               ├── Dictionary
+    │               ├── #innodb_temp
+    │               ├── mysql
+    │               ├── performance_schema
+    │               └── sys
+    ├── nginx
+    │   ├── conf
+    │   ├── log
+    │   ├── static
+    │   │   ├── css
+    │   │   └── js
+    │   └── templates
+    └── redis
+        └── myredis
+## 1.1 yaml file:
+分配静态IP，
+
+    networks:
+      dict-v1-net:
+        driver: bridge
+        ipam:
+          config:
+            - subnet: 172.21.0.0/24
+              gateway: 172.21.0.1
+
+下面可以给每个service分配IP:
+
+    ipv4_address: 172.21.0.2
+refer:
+* [为Docker容器指定自定义网段的固定IP/静态IP地址](https://blog.csdn.net/xiaoliuliu2050/article/details/53494927)
+
+### **Errors**
+
+1. ERROR: Invalid subnet : invalid CIDR address:
+
+> 注意格式gateway前面空格
+
+* [ERROR: Invalid subnet : invalid CIDR address](https://blog.csdn.net/weixin_43549350/article/details/120378151)
+
+
+
+# 2. Containers
+## 2.1 Mysql
+
+1. master
+
+### 2.1a.1 docker-compose.yaml
+    db_master:
+      build: ./mysql/master/
+      container_name: db_master_v1
+      environment:
+        MYSQL_ROOT_PASSWORD: "Mysql_666"
+        MYSQL_DATABASE: "Dictionary"
+      ports:
+        - "3307:3306"
+      volumes:
+        - /mysql/master/datalog:/var/lib/mysql
+        - /mysql/master/conf:/etc/mysql/conf.d
+      networks:
+        dict-v1-net:
+          ipv4_address: 172.21.0.2
+      # command:
+
+### 2.1a.2 Dockerfile
+    FROM mysql
+    COPY ./Dictionary.sql /docker-entrypoint-initdb.d/
+    # COPY ./master.sh /docker-entrypoint-initdb.d/
+    RUN chown mysql:mysql /var/lib/mysql
+    RUN chmod 777 /var/lib/mysql
+    RUN ls -l /var/lib/mysql
+
+### 2.1a.3 config
+    datadir=/var/lib/mysql/data
+    #socket=/var/lib/mysql/mysql.sock
+
+    log-error=/var/lib/mysql/mysql-error.log
+    pid-file=/var/run/mysqld/mysqld.pid
+
+    # master
+    server_id=2
+    log-bin=binlog
+    read-only=0
+    binlog-ignore-db=mysql
+    binlog-ignore-db=information_schema
+    binlog-ignore-db=performance_schema
+    binlog-ignore-db=sys
+    #binlog-do-db=TestDataBase
+    binlog-format=STATEMENT
+
+    secure-file-priv= ""
+    skip_ssl
+    default_authentication_plugin=mysql_native_password
+
+2. slave
+### 2.1b.a docker-compose.yaml
+    db_slave:
+      build: ./mysql/slave
+      container_name: db_slave_v1
+      environment:
+        MYSQL_ROOT_PASSWORD: "Mysql_666"
+        MASTER_CONTAINER: "db_master_v1"
+        MYSQL_DATABASE: "Dictionary"
+        # MYSQL_USER: "root" only for create a normal user not root
+        # MYSQL_PASSWORD: "Mysql_666"
+      ports:
+        - "3310:3306"
+      volumes:
+        - /mysql/slave/datalog:/var/lib/mysql
+        - /mysql/slave/conf:/etc/mysql/conf.d
+      depends_on:
+        - db_master
+      networks:
+        dict-v1-net:
+          ipv4_address: 172.21.0.3
+      # command:
+
+### 2.1b.2 Dockerfile
+    FROM mysql
+    USER root
+    COPY ./slave.sql /docker-entrypoint-initdb.d/
+    # COPY ./slave.sh /docker-entrypoint-initdb.d/
+    # RUN chmod 775 /docker-entrypoint-initdb.d/slave.sh
+    # COPY ./slave.sh /slave.sh
+    # RUN chmod 775 /slave.sh
+    # RUN /slave.sh
+    RUN chmod 777 /var/lib/mysql
+
+### 2.1b.3 config
+    [mysqld]
+    datadir=/var/lib/mysql/data
+    #socket=/var/lib/mysql/mysql.sock
+    skip_ssl
+    #server-public-key-path=/var/lib/mysql/data/public_key.pem
+    default_authentication_plugin=mysql_native_password
+    # client
+    server_id=3
+    relay-log=relay_log
+    read_only=1
+
+    [mysqld_safe]
+    log-error=/var/lib/mysql/mysql-error.log
+    pid-file=/var/run/mysql/mysql.pid
+
+## **Normal Errors** of 2.1 
+1. permission denied write error.log
+
+    [Entrypoint]: Switching to dedicated user 'mysql'
+
+> user "mysql"会造成接着进行的一些permission的问题,如:
+
+* /mysql/mysql-error.log permission的问题:
+
+    [MY-010187] [Server] Could not open file '/var/lib/mysql/.log' for error logging: Permission denied
+* mysql-file permission的问题，
+
+  mysqld: Error on realpath() on ‘/var/lib/mysql-files’ (Error 2 - No such file or directory)
+
+造成这些的原因在于docker的volume共享机制，所以这里要将共享的volume的data file的权限设置大些,如: 777.
+
+Refer: [MySQL8 的遇到的问题](https://blog.csdn.net/qq_22227087/article/details/109555148)
+
+2. authentication error
+
+    Authentication plugin 'caching_sha2_password' cannot be loaded:
+
+> MySQL的authentication的机制有三种
+* mysql_native_password
+* sha256_password
+* caching_sha2_password (default)
+
+mysql_native_password是最简单的一种:mysql.conf文件中写入default_authentication_plugin=mysql_native_password
+或者从MySQL的statement写入IDENTIFIED WITH mysql_native_password BY "******";
+
+Reference:
+* [New Default Authentication Plugin : caching_sha2_password](https://dev.mysql.com/blog-archive/mysql-8-0-4-new-default-authentication-plugin-caching_sha2_password/)
+* [6.4.1.2 Caching SHA-2 Pluggable Authentication](https://dev.mysql.com/doc/refman/8.0/en/caching-sha2-pluggable-authentication.html)
+* [Authentication plugin 'caching_sha2_password'](https://stackoverflow.com/questions/49194719/authentication-plugin-caching-sha2-password-cannot-be-loaded)
+
+
+3. slave并没有完全复制到master的tables
+depends_on 可控制服务启动顺序, 但compose并不等service完全就绪，就会开始启动下一个service，这样会造成slave不能复制master
+可在启动后进入slave，
+`STOP SLAVE;` `RESET SLAVE;` `START SLAVE;`
+也可通过建立另一个container来操作，见下面
+
+* [docker compose 服务启动顺序控制](https://www.cnblogs.com/wang_yb/p/9400291.html)
+* [Docker-compose编排微服务顺序启动](https://cloud.tencent.com/developer/article/1620658)
+* [Compose 启动顺序控制](https://wiki.opskumu.com/docker/compose/docker-compose-startup-order)
+* [depends_on](https://yeasy.gitbook.io/docker_practice/compose/compose_file#depends_on)
+* [depends_on](https://docs.docker.com/compose/compose-file/#depends_on)
+
+4. secure-file-priv= "", skip_ssl
+
+### **docker Notice** of 2.1
+1. the process of start mysql docker container:
+
+normal
+
+    mysqld.service -> /etc/mysql/mysql.conf(include conf.d/*) -> /etc/msyql/conf.d/***.conf
+
+docker mysql
+
+    mysqld.service -> 同上 -> /docker-entrypoint-initdb.d/*.conf
+
+> docker不仅会加载一般的配置/mysql.conf(include conf.d/\*) -> /etc/msyql/conf.d/\*.conf, 并且还会加载数据库命令等docker-entrypoint-initdb.d/内\*.sh, \*.sql的等文件. 所以将\*.sh, \*.sql来初始化database: eg. 初始创建一些table.
+>**这里可将给从机grand的命令添加到此处**
+eg
+
+    主机(docker-entrypoint-initdb.d/master.sql)
+    CREATE USER 'slave'@'%' IDENTIFIED BY 'Mysql_666';
+    GRANT REPLICATION SLAVE ON *.* TO 'slave'@'%';
+    FLUSH PRIVILEGES;
+
+    从机(docker-entrypoint-initdb.d/slave.sql)
+    CHANGE REPLICATION SOURCE TO SOURCE_HOST='172.21.0.2', SOURCE_PORT=3306, SOURCE_USER='slave', SOURCE_PASSWORD='Mysql_666', SOURCE_LOG_FILE="binlog.000003", SOURCE_LOG_POS=157;
+    START SLAVE;
+
+2. 主从复制docker的另一种方法：另建立一个docker用以对主库，从库操作
+refer: [MySQL master slave using docker](https://tarunlalwani.com/post/mysql-master-slave-using-docker/)
+
+主机
+
+    MASTER_IP=`hostname -I`
+    mysql -h ${MASTER_IP} -uroot -pMysql_666 -AN -e  "CREATE USER 'slave'@'%' IDENTIFIED BY 'Mysql_666';"
+    mysql -h ${MASTER_IP} -uroot -pMysql_666 -AN -e "GRANT REPLICATION SLAVE ON *.* TO 'slave'@'%';"
+    mysql -h ${MASTER_IP} -uroot -pMysql_666 -AN -e "FLUSH PRIVILEGES;"
+    
+从机
+    
+    SLAVE_IP=`hostname -I`
+    # MASTER_IP=`getent hosts ${MASTER_CONTAINER} | awk '{print $1}'`
+    MASTER_IP="172.21.0.2"
+    LOG_FILE=`mysql -h ${MASTER_IP} -uroot --port 3306 -pMysql_666 -AN --execute "show master status;" | awk '{print $1}'`
+    LOG_POS=`mysql -h ${MASTER_IP} -uroot --port 3306 -pMysql_666 -AN --execute "show master status;" | awk '{print $2}'`
+
+    mysql -h ${SLAVE_IP} -uroot -pMysql_666 -AN --execute "CHANGE REPLICATION SOURCE TO SOURCE_HOST='${MASTER_IP}', SOURCE_PORT=3306, SOURCE_USER='slave', SOURCE_PASSWORD='Mysql_666', SOURCE_LOG_FILE='${LOG_FILE}', SOURCE_LOG_POS='${LOG_POS}';"
+
+
+## 2.2 Redis
+### 2.2.1 docker-compose.yaml
+    cache:
+      image: redis
+      container_name: cache_redis_v1
+      ports:
+        - "6386:6379"
+      networks:
+        dict-v1-net:
+          ipv4_address: 172.21.0.4
+      volumes:
+        - /root/Nginx_Flask/docker/COMPOSE/redis/myredis/:/data
+      command:
+        redis-server /data/redis.conf
+
+### 2.2.2 config
+redis.conf
+
+    daemonize no
+    pidfile /var/run/redis_6379.pid
+    logfile "redis_6379.log"
+    requirepass redis666
+
+### **Errors**
+1. 容器执行后就立即退出
+> 对于容器而言，其启动程序就是容器应用进程，容器就是为了主进程而存在的，主进程退出，容器就失去了存在的意义，从而退出，其它辅助进程不是它需要关心的东西。
+refer: [CMD 容器启动命令](https://yeasy.gitbook.io/docker_practice/image/dockerfile/cmd)
+
+2. Authentication的问题
+    
+redis.conf:
+
+    requirepass redis666
+
+flask SQLAlchemy configure setting:
+
+    cache_config = {
+      "CACHE_REDIS_PASSWORD": "redis666"
+    }
+要对应
+
+refer: [解决 redis中redis.exceptions.AuthenticationError: Authentication required问题](https://blog.csdn.net/weixin_54812545/article/details/115973319)
+
+
+## 2.3 flask
+### 2.3.1 docker-compose.yaml
+    web_app:
+      build: ./flask
+      container_name: flaskapp_v1
+      ports:
+        - "5000:5000"
+      expose:
+        - "5000"
+      depends_on:
+        - db_slave
+        - cache
+      networks:
+        dict-v1-net:
+          ipv4_address: 172.21.0.5
+      volumes:
+        - /root/Nginx_Flask/docker/COMPOSE/flask/project:/project
+      command:
+        uwsgi --ini uwsgi.ini  
+      # restart: always
+
+### 2.3.2 Dockerfile
+	FROM python:3.8
+	RUN mkdir /project
+	RUN mkdir /project/templates
+	RUN mkdir -p /project/static/css
+	RUN mkdir -p /project/static/js
+	EXPOSE 5000
+	WORKDIR /project
+	ENV FLASK_APP=app
+	ENV FLASK_ENV=development
+	COPY ./project/requirements.txt /project
+	COPY ./project/uwsgi.ini /project
+	COPY ./project/app.py /project
+	COPY ./project/templates/ /project/templates
+	COPY ./project/static/css /project/static/css
+	COPY ./project/static/js /project/static/js
+	#RUN ls /project/templates
+	#RUN ls /project/static
+	RUN pip install -r requirements.txt
+	CMD ["uwsgi", "--ini", "uwsgi.ini"]
+
+### 2.3.3 conf
+uwsgi.ini
+
+	[uwsgi]
+	#主进程 PID 保存文件
+	pidfile =  uwsgi.pid
+	logto = uwsgi.log
+	#daemonize = uwsgi.log
+	logfile-chown = root:root
+	logfile-chmod = 640
+
+	# Nginx 使用,uwsgi port
+	socket=172.21.0.5:5000
+	#socket = myapp.sock
+	chmod-socket = 664
+
+	# uwsgi启动时，所使用的地址和端口（这个是http协议的）
+	#http=0.0.0.0:5000
+	# 指向网站目录
+	chdir=/project/
+
+	# Flask 使用
+	# python 启动程序文件
+	wsgi-file=app.py
+	# python 程序内用以启动的application 变量名 
+	callable=app
+
+	# Django 使用
+	# wsgi-flie=
+
+	#处理器数
+	processes=2
+	enable-threads = True
+	#线程数
+	threads=2
+
+**NOTICE**:
+1. 前后台运行
+
+后台运行，并写入文件uwsgi.log，docker不要使用（闪退）
+	
+	daemonize = uwsgi.log
+
+前台运行，日志文件uwsgi.log，并更改权限，否则造成permission问题
+
+	logto = uwsgi.log
+	logfile-chown = root:root
+	logfile-chmod = 640
+
+2. nginx.conf的http对应uwsgi.ini的socket使用uwsgi的IP和port
+
+
+## 2.4 Nginx
+### 2.4.1 docker-compose.yaml
+
+    nginx:
+      build: ./nginx
+      container_name: nginx_v1
+      ports:
+        - "8080:80"
+      expose:
+        - "8080"
+      networks:
+        dict-v1-net:
+          ipv4_address: 172.21.0.6
+      depends_on:
+        - web_app
+      command:
+        nginx -c /project/nginx.conf -g 'daemon off;'
+      # restart: always
+
+### 2.4.2 Dockerfile
+
+	FROM nginx
+	RUN mkdir /project
+	RUN mkdir /project/templates
+	RUN mkdir -p /project/static/css
+	RUN mkdir -p /project/static/js
+	EXPOSE 8080
+	WORKDIR /project
+	COPY ./templates/ /project/templates
+	COPY ./static/css /project/static/css
+	COPY ./static/js /project/static/js
+	COPY ./conf/nginx.conf /project/nginx.conf
+	CMD ["nginx", "-c", "/project/nginx.conf", "-g", 'daemon off;']
+
+### **Errors**
+1. 容器执行后就立即退出(daemon off;)
+> 而使用 service nginx start 命令，则是希望 upstart 来以后台守护进程形式启动 nginx 服务。而刚才说了 CMD service nginx start 会被理解为 CMD [ "sh", "-c", "service nginx start"]，因此主进程实际上是 sh。那么当 service nginx start 命令结束后，sh 也就结束了，sh 作为主进程退出了，自然就会令容器退出。
+正确的做法是直接执行 nginx 可执行文件，并且要求以前台形式运行。
+Refer to:
+[CMD 容器启动命令](https://yeasy.gitbook.io/docker_practice/image/dockerfile/cmd)
+
+	1. Dockerfile
+	CMD ["nginx", "-c", "/project/nginx.conf", "-g", 'daemon off;']
+	2. docker-compose.yaml
+	command: nginx -c /project/nginx.conf -g 'daemon off;'
+	3. nginx.conf
+	http {
+		...
+	};
+	daemon off;
+
+> 第三种种不确定，但如果使用前两种则第三种在conf文件中的形式会造成error.
+
+refer:
+* [docker custom nginx container failed to start](https://stackoverflow.com/questions/42319649/docker-custom-nginx-container-failed-to-start)
+* [nginx unexpected end of file, expecting ";" or "}"](https://stackoverflow.com/questions/37128262/nginx-unexpected-end-of-file-expecting-or-in-etc-nginx-sites-enabled-d)
+
+### 2.4.3 conf
+	server { 
+      listen 80;
+      server_name 172.21.0.6;
+      root /project;
+
+      # static
+      location /static {
+        alias /project/static;
+      }
+      location /templates{
+        alias /project/templates;
+      }
+      # dynamic
+      location / {
+        include /etc/nginx/uwsgi_params;
+        uwsgi_pass 172.21.0.5:5000;
+        #uwsgi_pass unix:/project/myapp.sock;
+      }
+    }
+
+uwsgi_pass的两种形式，
+1. Nginx和uwsgi在同一台机子上，两种皆可用。
+2. Nginx和uwsgi在不同机器上，不可用unix socket，只能用http
+
+> nginx.conf的http对应uwsgi.ini的socket使用uwsgi的IP和port
+
+refer:[Syntax:	uwsgi_pass [protocol://]address;](http://nginx.org/en/docs/http/ngx_http_uwsgi_module.html#uwsgi_pass)

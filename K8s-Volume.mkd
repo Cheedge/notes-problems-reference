@@ -1,0 +1,47 @@
+# Volume
+
+## PV and PVC
+1. prepare: NFS node
+
+`yum install nfs-utils-*`
+
+`vi /etc/exports`    
+    
+    /home/zhangsan 192.168.115.0(rw)
+    # 修改之后执行`exportfs -a`即可不用重启
+
+`systemctl restart nfs`
+
+2. make pv.yml and pvc.yml: pv-db.yaml pvc-db.yaml
+
+PV -- Filesystem not on node
+PVC -- on diff nodes
+
+3. create pv and pvc
+
+## emptyDir
+USE: make for some config directories
+
+```yaml
+    volumes:
+    - name: vol-name # same in mount
+      emptyDir: {}
+    container:
+    ...
+      volumemounts:
+      - name: vol-name
+        mountPath: /inside/ctner
+```
+## hostPath
+USE: easy for testing
+```yaml
+    volumes:
+    - name: vol-name # same in mount
+      hostPath:
+        path: /hostnode/path
+    container:
+    ...
+      volumeMounts:
+      - name: vol-name # same above
+        mountPath: /inside/container
+```

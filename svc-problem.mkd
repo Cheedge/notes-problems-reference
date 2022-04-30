@@ -1,0 +1,82 @@
+# Pod and svc:
+```s
+    [root@server]# kubectl get svc -o wide
+    NAME            TYPE       CLUSTER-IP      PORT(S)    SELECTOR
+    busybox-svc     ClusterIP  10.102.166.162  21596/TCP  app=busybox-pod
+    db-svc-headless ClusterIP  None            3307/TCP   app=mysql-app
+    db-svc-read     ClusterIP  10.111.195.112  3307/TCP   app=mysql-app
+    nginx-svc       ClusterIP  10.107.229.135  80/TCP     app=nginx-pod
+    redis-svc       ClusterIP  10.98.190.255   6379/TCP   app=redis-pod
+    web-app-svc     ClusterIP  10.108.106.26   5000/TCP   app=web-app-pod
+
+    [root@server]# kubectl get pods -o wide
+    NAME                          READY  STATUS   IP            NODE     
+    busybox-dpl-5ddb8ddfbd-d4x9p  1/1    Running  10.244.1.82   k8s-slave
+    mysql-stateful-0              2/2    Running  10.244.1.86   k8s-slave
+    mysql-stateful-1              2/2    Running  10.244.1.84   k8s-slave
+    nginx-dp-7ddc4b6b77-4gb8f     1/1    Running  10.244.1.91   k8s-slave   
+    redis-dpl-76b874bb65-zfpdc    1/1    Running  10.244.1.83   k8s-slave
+    web-app-dpl-59998dd477-wq2jg  1/1    Running  10.244.1.88   k8s-slave   
+```
+
+# ping IP
+svc
+```s
+    (X) ping 10.102.166.162
+    (V) ping db-svc-headless
+    (X) ping 10.111.195.112
+    (X) ping 10.107.229.135
+    (X) ping 10.98.190.255
+    (X) ping 10.108.106.26
+```
+pod
+```s
+    (V) ping 10.244.1.82
+    (V) ping 10.244.1.86
+    (V) ping 10.244.1.84
+    (V) ping 10.244.1.91
+    (V) ping 10.244.1.83
+    (V) ping 10.244.1.88
+```
+# telnet
+## telnet IP Port
+```s
+    (X) telnet 10.102.166.162   21596
+    (V) telnet db-svc-headless  3307
+    (V) telnet 10.111.195.112   3307
+    (V) telnet 10.107.229.135   80
+    (V) telnet 10.98.190.255    6379
+    (V) telnet 10.108.106.26    5000
+```
+## telnet name Port
+```s
+    (X) telnet busybox-svc  21596
+    (V) telnet db-svc-headless  3307
+    (V) telnet db-svc-read  3307
+    (V) telnet nginx-svc    80
+    (V) telnet redis-svc    6379
+    (V) telnet web-app-svc  5000
+```
+# curl
+
+```s
+    # svc
+    (X)     curl 10.102.166.162:21596
+    (V1)    curl db-svc-headless:3307
+    (V1)    curl 10.111.195.112:3307
+    (V)     curl 10.107.229.135:80
+    (V1)    curl 10.98.190.255:6379
+    (E)     curl 10.108.106.26:5000
+    # pod
+    (X)     curl 10.244.1.82:21596
+    (V1)    curl 10.244.1.86:3307
+    (V1)    curl 10.244.1.84:3307
+    (V)     curl 10.244.1.91:8089   # targetPort/ContainerPort 8089
+    (V1)    curl 10.244.1.83:6379
+    (E)     curl 10.244.1.88:5000
+
+    (V1): curl: (1) Received HTTP/0.9 when not allowed inside pod
+        successfully outside the pod.
+    (E): curl: (52) Empty reply from server
+    (X): curl: (7)...Connection refused
+```

@@ -1,0 +1,55 @@
+# Web
+
+
+
+
+
+
+application layer -- file(FTP(TCP),NFS(UDP)), http ---- app layer(应用程序)
+Transportlayer -- TCP/UDP -- PORT -- T layer(进程到进程)
+Net lyer -- -- IP(ICMP/IGMP) -- Net layer(主机到主机)
+link layer -- ARP,ethernet -- 硬件设备(网卡)MAC -- link layer(设备到设备)
+
+## link layer(2nd layer)
+* ARP: IP -find-> MAC; RARP: MAC -> IP
+* 硬件设备: 网卡, switch(交换机): 转发MAC
+* 设备到设备
+## Net layer(3rd layer)
+* IP: 网络中表示主机
+* router: 转发IP
+* 主机到主机
+## Tranportation layer
+* TCP/UDP
+* Port: 一台主机上唯一标识一个进程
+* 进程到进程
+## app layer
+* protocal:
+    - file:
+        + FTP(TCP)
+        + NFS(UDP)
+    - http
+* 应用程序
+* 对数据封装解封
+
+# socket
+* socket 在通信中一定成对出现
+##
+* Bidirectional full duplex
+    + 对讲机, channel
+* Bidirectional half duplex
+    + 电话, socket(封装 2 channels)
+* Simplex
+    + 遥控器
+
+# CS / BS
+## CS
+* 提高数据传输效率
+* 安全性威胁
+## BS
+* 在线缓存，数据传输表现不好
+* 协议不灵活
+* 安全
+* 开发工作量小
+
+# TCP(CS)
+先建立连接再传递
